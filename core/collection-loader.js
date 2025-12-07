@@ -334,30 +334,31 @@ async function discoverViaPlugin(settings) {
             console.debug('   Sources:', Object.entries(sourcesSummary).map(([s, count]) => `${s}: ${count}`).join(', '));
 
             // Cache the plugin data (includes chunk counts, sources, AND backends)
-            // Key format: "source:collectionId" to handle same collection ID across different sources
+            // Key format: "backend:source:collectionId" to handle same collection in multiple backends
             pluginCollectionData = {};
             const uniqueKeys = [];
 
             for (const collection of data.collections) {
-                console.debug(`   - ${collection.source}:${collection.id} (${collection.chunkCount} chunks, backend: ${collection.backend || 'standard'})`);
+                const backend = collection.backend || 'standard';
+                console.debug(`   - ${backend}:${collection.source}:${collection.id} (${collection.chunkCount} chunks)`);
 
                 const collectionData = {
                     chunkCount: collection.chunkCount,
                     source: collection.source,
-                    backend: collection.backend || 'standard',
+                    backend: backend,
                     model: collection.model || '',  // Primary model path
                     models: collection.models || []  // All available models
                 };
 
-                // Cache by "source:id" to avoid collisions when same ID exists in multiple sources
-                const cacheKey = `${collection.source}:${collection.id}`;
+                // Cache by "backend:source:id" to uniquely identify each collection
+                const cacheKey = `${backend}:${collection.source}:${collection.id}`;
                 pluginCollectionData[cacheKey] = collectionData;
                 uniqueKeys.push(cacheKey);
 
                 // Also cache by sanitized version (for LanceDB lookups)
                 const sanitized = collection.id.replace(/[^a-zA-Z0-9_.-]/g, '_');
                 if (sanitized !== collection.id) {
-                    pluginCollectionData[`${collection.source}:${sanitized}`] = collectionData;
+                    pluginCollectionData[`${backend}:${collection.source}:${sanitized}`] = collectionData;
                 }
             }
 
@@ -370,8 +371,48 @@ async function discoverViaPlugin(settings) {
             console.debug(`   Current registry has ${currentRegistry.length} entries`);
             console.debug(`   Plugin discovered ${uniqueKeys.length} collections`);
 
+            // Migrate old registry entries (source:id or plain id) to new format (backend:source:id)
+            // Match them to plugin-discovered collections
+            const migratedEntries = [];
+            for (const oldKey of [...currentRegistry]) {
+                const parsed = parseRegistryKey(oldKey);
+                
+                // If already in new format (has backend), keep it
+                if (parsed.backend) {
+                    continue;
+                }
+                
+                // Old format - try to find matching collection from plugin
+                const collectionId = parsed.collectionId;
+                const oldSource = parsed.source;
+                
+                // Find all plugin collections matching this ID
+                const matchingPluginKeys = uniqueKeys.filter(key => {
+                    const parts = key.split(':');
+                    const pluginId = parts.slice(2).join(':');  // backend:source:id -> id
+                    const pluginSource = parts[1];
+                    
+                    // Match by ID and source (if source was known)
+                    return pluginId === collectionId && (!oldSource || pluginSource === oldSource);
+                });
+                
+                if (matchingPluginKeys.length > 0) {
+                    console.debug(`   🔄 Migrating: ${oldKey} -> ${matchingPluginKeys.join(', ')}`);
+                    unregisterCollection(oldKey);
+                    migratedEntries.push(oldKey);
+                    // Don't register here - will be registered in the main loop below
+                } else {
+                    console.debug(`   ❓ No matching plugin collection for old entry: ${oldKey}`);
+                }
+            }
+            
+            if (migratedEntries.length > 0) {
+                console.log(`   ✅ Migrated ${migratedEntries.length} old registry entries to new format`);
+            }
+
             // Remove entries that no longer exist on disk
-            const staleEntries = currentRegistry.filter(key => !pluginKeySet.has(key));
+            const updatedRegistry = getCollectionRegistry();
+            const staleEntries = updatedRegistry.filter(key => !pluginKeySet.has(key));
             if (staleEntries.length > 0) {
                 console.debug(`   🗑️  Removing ${staleEntries.length} stale registry entries:`);
                 for (const staleKey of staleEntries) {
@@ -380,26 +421,17 @@ async function discoverViaPlugin(settings) {
                 }
             }
 
-            // Register all discovered collections with source:id format
+            // Register all discovered collections with backend:source:id format
             let newRegistrations = 0;
-            let duplicateKeySkips = 0;
             for (const key of uniqueKeys) {
-                if (!currentRegistry.includes(key)) {
+                if (!getCollectionRegistry().includes(key)) {
                     newRegistrations++;
                     console.debug(`   ➕ Registering: ${key}`);
                 } else {
-                    duplicateKeySkips++;
                     console.debug(`   ⏭️  Already registered: ${key}`);
                 }
                 registerCollection(key);
-            }
-            
-            if (duplicateKeySkips > 0) {
-                console.warn(`   ⚠️  ${duplicateKeySkips} collection(s) had duplicate registry keys (same source:id in multiple backends)`);
-                console.warn(`   💡 Registry key format "source:id" doesn't distinguish backends - only one backend per source:id can be registered`);
-            }
-
-            if (newRegistrations > 0) {
+            }            if (newRegistrations > 0) {
                 console.log(`   ✅ Registered ${newRegistrations} new collections`);
             }
 
@@ -592,18 +624,26 @@ export async function doesChatHaveVectors(settings, overrideChatId, overrideUUID
                        matchesPatterns(collectionId, searchPatterns);
 
         if (matches) {
-            // Get chunk count from plugin cache if available
+            // Get chunk count, source, and backend from plugin cache if available
             let chunkCount = 0;
+            let source = parsed.source || 'unknown';
+            let backend = parsed.backend || 'standard';
+            
             if (pluginCollectionData && pluginCollectionData[registryKey]) {
-                chunkCount = pluginCollectionData[registryKey].chunkCount || 0;
+                const cacheData = pluginCollectionData[registryKey];
+                chunkCount = cacheData.chunkCount || 0;
+                source = cacheData.source || source;
+                backend = cacheData.backend || backend;
             }
 
             matchingCollections.push({
                 collectionId,
                 registryKey,
-                chunkCount
+                chunkCount,
+                source,
+                backend
             });
-            console.log(`VectHare: Found matching collection ${collectionId} (${chunkCount} chunks)`);
+            console.log(`VectHare: Found matching collection ${collectionId} (${chunkCount} chunks, backend: ${backend})`);
         }
     }
 
@@ -611,14 +651,6 @@ export async function doesChatHaveVectors(settings, overrideChatId, overrideUUID
     if (matchingCollections.length > 0) {
         // Sort by chunk count descending
         matchingCollections.sort((a, b) => b.chunkCount - a.chunkCount);
-
-        // Add source info from plugin cache
-        for (const match of matchingCollections) {
-            if (pluginCollectionData && pluginCollectionData[match.registryKey]) {
-                match.source = pluginCollectionData[match.registryKey].source;
-                match.backend = pluginCollectionData[match.registryKey].backend;
-            }
-        }
 
         const best = matchingCollections[0];
         console.log(`VectHare: Found ${matchingCollections.length} matching collection(s), best is ${best.collectionId} with ${best.chunkCount} chunks`);
@@ -688,8 +720,9 @@ export async function loadAllCollections(settings, autoDiscover = true) {
             const parsedKey = parseRegistryKey(registryKey);
             const collectionId = parsedKey.collectionId;
             const registrySource = parsedKey.source;
+            const registryBackend = parsedKey.backend;
 
-            console.log(`VectHare: Loading collection: ${collectionId} (source: ${registrySource || 'unknown'})`);
+            console.log(`VectHare: Loading collection: ${collectionId} (backend: ${registryBackend || 'unknown'}, source: ${registrySource || 'unknown'})`);
 
             // First check stored metadata for user-defined contentType (authoritative source)
             const storedMeta = getCollectionMeta(registryKey) || getCollectionMeta(collectionId);
@@ -706,12 +739,12 @@ export async function loadAllCollections(settings, autoDiscover = true) {
             let chunkCount = 0;
             let hashes = [];
             let source = registrySource || 'unknown';
-            let backend = 'standard';
+            let backend = registryBackend || 'standard';
             let model = '';
             let models = [];
 
             // If plugin is available, use chunk count, source, and backend from plugin cache
-            // Cache key is "source:collectionId"
+            // Cache key is "backend:source:collectionId"
             const cacheKey = registryKey;
             if (hasPlugin && pluginCollectionData && pluginCollectionData[cacheKey]) {
                 console.log(`VectHare:   Using plugin mode - getting data from cache`);
