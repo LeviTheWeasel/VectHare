@@ -7,7 +7,7 @@
  * All chunk operations go through unified /chunks/* endpoints.
  * Backend is specified via `backend` parameter in request body.
  *
- * @version 3.0.0
+ * @version 3.1.0
  */
 
 import path from 'node:path';
