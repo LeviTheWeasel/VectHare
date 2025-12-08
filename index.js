@@ -1664,9 +1664,24 @@ async function scanAllSourcesForCollections(vectorsPath) {
                     for (const collectionName of collections) {
                         const items = await qdrantBackend.listItems(collectionName, {});
                         console.log('Discovered Qdrant Collection:', collectionName + " " + items.length + " items");
+
+                        // Extract source from collection name (format: "source:id" or "backend:source:id")
+                        let source = 'unknown';
+                        const parts = collectionName.split(':');
+                        if (parts.length === 2) {
+                            // Format: "source:id"
+                            source = parts[0];
+                        } else if (parts.length === 3) {
+                            // Format: "backend:source:id"
+                            source = parts[1];
+                        } else if (items.length > 0 && items[0].metadata?.embeddingSource) {
+                            // Fallback: get from item metadata
+                            source = items[0].metadata.embeddingSource;
+                        }
+
                          allCollections.push({
                             id: collectionName,
-                            source: 'qdrant',
+                            source: source,
                             backend: 'qdrant',
                             chunkCount: items.length,
                             modelCount: 1
