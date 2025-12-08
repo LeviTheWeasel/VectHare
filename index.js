@@ -878,11 +878,14 @@ async function _getLegacySingleEmbedding(source, text, model, directories, req) 
         }
         case 'ollama': {
             const { getOllamaVector } = await import('../../src/vectors/ollama-vectors.js');
-            return await getOllamaVector(text, req.body.apiUrl, model, req.body.keep, directories);
+            const apiUrl = req.body?.apiUrl || 'http://localhost:11434';
+            const keep = req.body?.keep || false;
+            return await getOllamaVector(text, apiUrl, model, keep, directories);
         }
         case 'llamacpp': {
             const { getLlamaCppVector } = await import('../../src/vectors/llamacpp-vectors.js');
-            return await getLlamaCppVector(text, req.body.apiUrl, directories);
+            const apiUrl = req.body?.apiUrl || 'http://localhost:8080';
+            return await getLlamaCppVector(text, apiUrl, directories);
         }
         case 'bananabread': {
             // Legacy single-item fallback (should normally be handled by batch handler)
@@ -890,7 +893,8 @@ async function _getLegacySingleEmbedding(source, text, model, directories, req) 
         }
         case 'vllm': {
             const { getVllmVector } = await import('../../src/vectors/vllm-vectors.js');
-            return await getVllmVector(text, req.body.apiUrl, model, directories);
+            const apiUrl = req.body?.apiUrl || 'http://localhost:8000';
+            return await getVllmVector(text, apiUrl, model, directories);
         }
         case 'palm':
         case 'vertexai': {
@@ -903,7 +907,9 @@ async function _getLegacySingleEmbedding(source, text, model, directories, req) 
         }
         case 'extras': {
             const { getExtrasVector } = await import('../../src/vectors/extras-vectors.js');
-            return await getExtrasVector(text, req.body.extrasUrl, req.body.extrasKey);
+            const extrasUrl = req.body?.extrasUrl || 'http://localhost:5100';
+            const extrasKey = req.body?.extrasKey || '';
+            return await getExtrasVector(text, extrasUrl, extrasKey);
         }
         default:
             throw new Error(`Unknown vector source: ${source}`);
