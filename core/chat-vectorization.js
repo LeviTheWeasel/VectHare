@@ -377,6 +377,9 @@ async function rerankWithBananaBread(query, chunks, settings) {
 export async function synchronizeChat(settings, batchSize = 5) {
     // Build proper collection ID using chat UUID first
     const collectionId = getChatCollectionId();
+    console.log(`🔍 VectHare DEBUG: getChatCollectionId() returned: "${collectionId}"`);
+    console.log(`🔍 VectHare DEBUG: settings.vector_backend = "${settings.vector_backend}"`);
+    console.log(`🔍 VectHare DEBUG: settings.source = "${settings.source}"`);
     if (!collectionId) {
         return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
     }
@@ -470,6 +473,8 @@ export async function synchronizeChat(settings, batchSize = 5) {
                         const backend = settings.vector_backend || 'standard';
                         const source = settings.source || 'transformers';
                         const registryKey = `${backend}:${source}:${collectionId}`;
+                        console.log(`🔍 VectHare DEBUG: Registering collection with key: "${registryKey}"`);
+                        console.log(`🔍 VectHare DEBUG: Components: backend="${backend}", source="${source}", collectionId="${collectionId}"`);
                         registerCollection(registryKey);
                         isRegistered = true;
                         console.log(`VectHare: Registered collection ${registryKey} after first successful insert`);

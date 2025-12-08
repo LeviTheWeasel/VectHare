@@ -340,7 +340,16 @@ async function discoverViaPlugin(settings) {
 
             for (const collection of data.collections) {
                 const backend = collection.backend || 'standard';
-                console.debug(`   - ${backend}:${collection.source}:${collection.id} (${collection.chunkCount} chunks)`);
+                
+                // Strip backend prefix from collection.id if it's already there
+                // Some backends (like Qdrant) may return IDs with backend prefix
+                let collectionId = collection.id;
+                if (collectionId.startsWith(`${backend}:`)) {
+                    collectionId = collectionId.substring(backend.length + 1);
+                    console.debug(`   🔧 Stripped backend prefix from collection ID: ${collection.id} → ${collectionId}`);
+                }
+                
+                console.debug(`   - ${backend}:${collection.source}:${collectionId} (${collection.chunkCount} chunks)`);
 
                 const collectionData = {
                     chunkCount: collection.chunkCount,
@@ -351,13 +360,13 @@ async function discoverViaPlugin(settings) {
                 };
 
                 // Cache by "backend:source:id" to uniquely identify each collection
-                const cacheKey = `${backend}:${collection.source}:${collection.id}`;
+                const cacheKey = `${backend}:${collection.source}:${collectionId}`;
                 pluginCollectionData[cacheKey] = collectionData;
                 uniqueKeys.push(cacheKey);
 
                 // Also cache by sanitized version (for LanceDB lookups)
-                const sanitized = collection.id.replace(/[^a-zA-Z0-9_.-]/g, '_');
-                if (sanitized !== collection.id) {
+                const sanitized = collectionId.replace(/[^a-zA-Z0-9_.-]/g, '_');
+                if (sanitized !== collectionId) {
                     pluginCollectionData[`${backend}:${collection.source}:${sanitized}`] = collectionData;
                 }
             }
