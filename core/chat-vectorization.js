@@ -1683,9 +1683,7 @@ export async function rearrangeChat(chat, settings, type) {
         if (chunksToInject.length === 0) {
             console.log('ℹ️ VectHare: All retrieved chunks already in context, nothing to inject');
             console.log(`   ${skippedDuplicates.length} chunks were skipped (already in current chat)`);
-            console.warn('⚠️ VectHare INJECTION BLOCKED: All chunks are duplicates of messages already in the chat');
-            console.warn('   💡 This usually means the vector search found messages that are already visible in the current context');
-            console.warn('   💡 Try adjusting your temporal decay settings or query depth to retrieve older messages');
+            console.info('[VectHare] Injection blocked: All retrieved chunks are already present in the current chat context. Adjust temporal decay or query depth if you want older messages.');
             debugData.stages.injected = [];
             debugData.stats.actuallyInjected = 0;
             debugData.stats.skippedDuplicates = skippedDuplicates.length;
