@@ -76,6 +76,14 @@ const defaultSettings = {
     bananabread_rerank: false,
     bananabread_api_key: '', // Stored here since custom keys aren't returned by ST's readSecretState()
 
+    // Keyword learning (YAKE integration)
+    yake_enabled: true,
+    yake_server_url: 'http://localhost:5555',
+    yake_max_keywords: 10,
+    yake_language: 'en',
+    yake_dedup_threshold: 0.9,
+    yake_window_size: 1,
+
     // Chat vectorization
     enabled_chats: false,
     chunking_strategy: 'per_message', // per_message, conversation_turns, message_batch, adaptive

@@ -2,14 +2,32 @@
  * ============================================================================
  * VECTHARE KEYWORD LEARNER
  * ============================================================================
- * Analyzes individual entries to suggest keywords based on word frequency
- * within that entry's content.
+ * Analyzes individual entries to suggest keywords using multiple methods:
+ * 
+ * 1. Frequency-based: Words appearing X times in an entry
+ * 2. YAKE: Advanced statistical keyword extraction algorithm
  *
- * If a word appears X times in an entry, suggest it as a keyword for that entry.
- *
- * @version 1.0.0
+ * @version 2.0.0
  * ============================================================================
  */
+
+import { extension_settings } from '../../../../extensions.js';
+
+/**
+ * Get YAKE settings from extension settings
+ * @returns {object} YAKE configuration
+ */
+function getYakeSettings() {
+    const settings = extension_settings.vecthare || {};
+    return {
+        enabled: settings.yake_enabled !== false,  // Default true
+        serverUrl: settings.yake_server_url || 'http://localhost:5555',
+        maxKeywords: settings.yake_max_keywords || 10,
+        language: settings.yake_language || 'en',
+        dedupThreshold: settings.yake_dedup_threshold || 0.9,
+        windowSize: settings.yake_window_size || 1,
+    };
+}
 
 // Stop words to ignore
 const STOP_WORDS = new Set([
@@ -219,4 +237,161 @@ export function analyzeEntry(text) {
         unique: counts.size,
         frequencies,
     };
+}
+
+/**
+ * Extract keywords using YAKE algorithm via Python backend
+ * @param {string} text - Entry content
+ * @param {object} options - YAKE options (overrides defaults from settings)
+ * @param {string} options.language - Language code
+ * @param {number} options.maxKeywords - Maximum keywords to return
+ * @param {number} options.deduplicationThreshold - Deduplication threshold
+ * @param {number} options.windowSize - N-gram window size
+ * @param {number} options.topN - Number of keywords to extract
+ * @param {string} options.serverUrl - YAKE server URL
+ * @returns {Promise<Array<{word: string, score: number}>>} Keywords with YAKE scores
+ */
+export async function extractYakeKeywords(text, options = {}) {
+    const yakeSettings = getYakeSettings();
+    
+    const {
+        language = yakeSettings.language,
+        maxKeywords = yakeSettings.maxKeywords,
+        deduplicationThreshold = yakeSettings.dedupThreshold,
+        windowSize = yakeSettings.windowSize,
+        topN = yakeSettings.maxKeywords,
+        serverUrl = yakeSettings.serverUrl,
+    } = options;
+
+    try {
+        const response = await fetch(`${serverUrl}/extract`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text,
+                language,
+                maxKeywords,
+                deduplicationThreshold,
+                windowSize,
+                topN,
+            }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(`YAKE server error: ${errorData.error || response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        // Convert YAKE format to our format
+        return data.keywords.map(kw => ({
+            word: kw.text,
+            score: kw.score,
+        }));
+    } catch (error) {
+        console.error('[VectHare Keyword Learner] YAKE extraction failed:', error);
+        // Fall back to frequency-based extraction
+        return extractSuggestedKeywords(text, 2).map(word => ({
+            word,
+            score: 0,
+        }));
+    }
+}
+
+/**
+ * Check if YAKE server is available
+ * @param {string} serverUrl - YAKE server URL (uses settings if not provided)
+ * @returns {Promise<boolean>} True if server is healthy
+ */
+export async function checkYakeHealth(serverUrl) {
+    const yakeSettings = getYakeSettings();
+    const url = serverUrl || yakeSettings.serverUrl;
+    try {
+        const response = await fetch(`${url}/health`, {
+            method: 'GET',
+        });
+        
+        if (!response.ok) return false;
+        
+        const data = await response.json();
+        return data.status === 'healthy';
+    } catch (error) {
+        console.warn('[VectHare Keyword Learner] YAKE server not available:', error.message);
+        return false;
+    }
+}
+
+/**
+ * Extract keywords using both frequency and YAKE methods, then combine results
+ * @param {string} text - Entry content
+ * @param {object} options - Extraction options
+ * @param {number} options.threshold - Frequency threshold (default: 3)
+ * @param {number} options.maxKeywords - Maximum keywords to return
+ * @param {boolean} options.useYake - Use YAKE extraction (uses settings if not provided)
+ * @param {object} options.yakeOptions - Options for YAKE (see extractYakeKeywords)
+ * @returns {Promise<Array<{word: string, source: string, score?: number, count?: number}>>}
+ */
+export async function extractKeywordsHybrid(text, options = {}) {
+    const yakeSettings = getYakeSettings();
+    
+    const {
+        threshold = 3,
+        maxKeywords = yakeSettings.maxKeywords,
+        useYake = yakeSettings.enabled,
+        yakeOptions = {},
+    } = options;
+
+    const allKeywords = [];
+    const seen = new Set();
+
+    // Get frequency-based keywords
+    const freqKeywords = getSuggestedKeywordsForEntry(text, threshold);
+    for (const kw of freqKeywords) {
+        if (!seen.has(kw.word)) {
+            seen.add(kw.word);
+            allKeywords.push({
+                word: kw.word,
+                source: 'frequency',
+                count: kw.count,
+            });
+        }
+    }
+
+    // Get YAKE keywords if enabled
+    if (useYake) {
+        const yakeAvailable = await checkYakeHealth(yakeOptions.serverUrl);
+        
+        if (yakeAvailable) {
+            const yakeKeywords = await extractYakeKeywords(text, yakeOptions);
+            for (const kw of yakeKeywords) {
+                if (!seen.has(kw.word)) {
+                    seen.add(kw.word);
+                    allKeywords.push({
+                        word: kw.word,
+                        source: 'yake',
+                        score: kw.score,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by relevance (lower YAKE score = more relevant, higher freq count = more relevant)
+    allKeywords.sort((a, b) => {
+        if (a.source === 'yake' && b.source === 'yake') {
+            return a.score - b.score; // Lower score first
+        }
+        if (a.source === 'frequency' && b.source === 'frequency') {
+            return b.count - a.count; // Higher count first
+        }
+        // Mixed: prioritize YAKE (it's generally more accurate)
+        if (a.source === 'yake') return -1;
+        if (b.source === 'yake') return 1;
+        return 0;
+    });
+
+    return allKeywords.slice(0, maxKeywords);
 }
