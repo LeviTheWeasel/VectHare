@@ -90,6 +90,9 @@ const defaultSettings = {
     chunk_size: 500, // For adaptive strategy only
     score_threshold: 0.25,
 
+    // Deduplication settings
+    deduplication_depth: 50, // Number of recent messages to check for duplicates (0 = check all)
+
     // Keyword scoring method
     keyword_scoring_method: 'keyword', // 'keyword', 'bm25', or 'hybrid'
 

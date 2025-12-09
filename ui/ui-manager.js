@@ -423,12 +423,19 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small>Query Depth: <span id="vecthare_query_depth_value">2</span> messages</small>
                             </label>
                             <input type="range" id="vecthare_query_depth" class="vecthare-slider" min="1" max="20" step="1" />
+                            <small class="vecthare_hint">How many recent messages to include in search query</small>
+
+                            <label for="vecthare_deduplication_depth" style="margin-top: 12px;">
+                                <small>Dedup Depth: <span id="vecthare_deduplication_depth_value">50</span> messages</small>
+                            </label>
+                            <input type="range" id="vecthare_deduplication_depth" class="vecthare-slider" min="0" max="500" step="10" />
+                            <small class="vecthare_hint">Recent messages to check for duplicates (0 = check all, lower = allow older content to resurface)</small>
+
                             <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
                                 <label for="vecthare_topk" style="margin:0; white-space:nowrap;"><small>Top K</small></label>
                                 <input id="vecthare_topk" type="number" class="vecthare-input" min="1" style="width:90px;" />
                                 <small class="vecthare_hint" style="margin-left:8px;">Number of results to retrieve per collection</small>
                             </div>
-                            <small class="vecthare_hint">How many recent messages to include in search query</small>
 
                             <label style="margin-top: 16px;">
                                 <small>Injection Position</small>
@@ -1752,6 +1759,19 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
     $('#vecthare_threshold_value').text(settings.score_threshold.toFixed(2));
+
+    // Deduplication depth
+    $('#vecthare_deduplication_depth')
+        .val(settings.deduplication_depth ?? 50)
+        .on('input', function() {
+            const value = parseInt($(this).val());
+            const safeValue = isNaN(value) ? 50 : Math.max(0, value);
+            $('#vecthare_deduplication_depth_value').text(safeValue);
+            settings.deduplication_depth = safeValue;
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+        });
+    $('#vecthare_deduplication_depth_value').text(settings.deduplication_depth ?? 50);
 
     // Keyword scoring method
     $('#vecthare_keyword_scoring_method')
