@@ -213,6 +213,22 @@ function createModal() {
                                     </div>
                                 </label>
                             </div>
+
+                            <!-- YAKE-specific settings -->
+                            <div class="vecthare-cv-yake-settings" id="vecthare_cv_yake_settings" style="display: none; margin-top: 15px;">
+                                <div class="vecthare-cv-slider-row">
+                                    <label>
+                                        Max Keywords
+                                        <span class="vecthare-cv-value" id="vecthare_cv_yake_max_keywords_val">10</span>
+                                    </label>
+                                    <input type="range" id="vecthare_cv_yake_max_keywords"
+                                           min="3" max="30" step="1" value="10">
+                                    <div class="vecthare-cv-slider-hints">
+                                        <span>Few</span>
+                                        <span>Many</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -745,6 +761,18 @@ function updateChunkingSection(type) {
     const keywordMethod = settings.keyword_extraction_method || 'frequency';
     $(`input[name="vecthare_cv_keyword_method"][value="${keywordMethod}"]`).prop('checked', true);
 
+    // Set YAKE max keywords
+    const yakeMaxKeywords = settings.yake_max_keywords || 10;
+    $('#vecthare_cv_yake_max_keywords').val(yakeMaxKeywords);
+    $('#vecthare_cv_yake_max_keywords_val').text(yakeMaxKeywords);
+
+    // Show/hide YAKE settings based on method
+    if (keywordMethod === 'yake' || keywordMethod === 'hybrid') {
+        $('#vecthare_cv_yake_settings').show();
+    } else {
+        $('#vecthare_cv_yake_settings').hide();
+    }
+
     // Show/hide size controls based on strategy type
     updateSizeControlsVisibility();
 }
@@ -1184,7 +1212,27 @@ function bindEvents() {
             settings.keyword_extraction_method = method;
             Object.assign(extension_settings.vecthare, settings);
             saveSettingsDebounced();
+
+            // Show/hide YAKE settings
+            if (method === 'yake' || method === 'hybrid') {
+                $('#vecthare_cv_yake_settings').show();
+            } else {
+                $('#vecthare_cv_yake_settings').hide();
+            }
         }
+    });
+
+    // YAKE max keywords slider
+    $('#vecthare_cv_yake_max_keywords').on('input', function() {
+        const value = $(this).val();
+        $('#vecthare_cv_yake_max_keywords_val').text(value);
+        currentSettings.yakeMaxKeywords = parseInt(value);
+
+        // Update global setting
+        const settings = extension_settings.vecthare || {};
+        settings.yake_max_keywords = parseInt(value);
+        Object.assign(extension_settings.vecthare, settings);
+        saveSettingsDebounced();
     });
 
     // Size sliders
