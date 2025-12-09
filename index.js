@@ -7,7 +7,7 @@
  * All chunk operations go through unified /chunks/* endpoints.
  * Backend is specified via `backend` parameter in request body.
  *
- * @version 3.0.0
+ * @version 3.1.0
  */
 
 import path from 'node:path';
@@ -20,7 +20,7 @@ import qdrantBackend from './qdrant-backend.js';
 import milvusBackend from './milvus-backend.js';
 
 const pluginName = 'similharity';
-const pluginVersion = '3.0.0';
+const pluginVersion = '3.1.0';
 
 /**
  * Initialize the plugin
@@ -99,7 +99,7 @@ export async function init(router) {
                         if (itemsNeedingVectors.length > 0) {
                             const texts = itemsNeedingVectors.map(i => i.text);
                             const vectors = await getVectorsForSource(source, texts, model, directories, req);
-                            
+
                             let vIndex = 0;
                             itemsWithVectors = itemsWithVectors.map(item => {
                                 if (!item.vector) {
@@ -300,7 +300,7 @@ export async function init(router) {
                             console.log(`[LanceDB] Generating embeddings for ${itemsNeedingVectors.length} items`);
                             const texts = itemsNeedingVectors.map(i => i.text);
                             const vectors = await getVectorsForSource(source, texts, model, directories, req);
-                            
+
                             let vIndex = 0;
                             itemsWithVectors = itemsWithVectors.map(item => {
                                 if (!item.vector) {
@@ -382,7 +382,7 @@ export async function init(router) {
                             console.log(`[Qdrant] Generating embeddings for ${itemsNeedingVectors.length} items`);
                             const texts = itemsNeedingVectors.map(i => i.text);
                             const vectors = await getVectorsForSource(source, texts, model, directories, req);
-                            
+
                             let vIndex = 0;
                             itemsWithVectors = itemsWithVectors.map(item => {
                                 if (!item.vector) {
@@ -428,7 +428,7 @@ export async function init(router) {
                     },
 
                     purge: async (collectionId, source, model, directories, filters = {}) => {
-                        await qdrantBackend.purgeCollection(collectionId, filters);
+                        await qdrantBackend.purgeAll(collectionId, filters);
                     },
 
                     stats: async (collectionId, source, model, directories, filters = {}) => {
@@ -466,7 +466,7 @@ export async function init(router) {
                             console.log(`[Milvus] Generating embeddings for ${itemsNeedingVectors.length} items`);
                             const texts = itemsNeedingVectors.map(i => i.text);
                             const vectors = await getVectorsForSource(source, texts, model, directories, req);
-                            
+
                             let vIndex = 0;
                             itemsWithVectors = itemsWithVectors.map(item => {
                                 if (!item.vector) {
@@ -878,11 +878,14 @@ async function _getLegacySingleEmbedding(source, text, model, directories, req) 
         }
         case 'ollama': {
             const { getOllamaVector } = await import('../../src/vectors/ollama-vectors.js');
-            return await getOllamaVector(text, req.body.apiUrl, model, req.body.keep, directories);
+            const apiUrl = req.body?.apiUrl || 'http://localhost:11434';
+            const keep = req.body?.keep || false;
+            return await getOllamaVector(text, apiUrl, model, keep, directories);
         }
         case 'llamacpp': {
             const { getLlamaCppVector } = await import('../../src/vectors/llamacpp-vectors.js');
-            return await getLlamaCppVector(text, req.body.apiUrl, directories);
+            const apiUrl = req.body?.apiUrl || 'http://localhost:8080';
+            return await getLlamaCppVector(text, apiUrl, directories);
         }
         case 'bananabread': {
             // Legacy single-item fallback (should normally be handled by batch handler)
@@ -890,7 +893,8 @@ async function _getLegacySingleEmbedding(source, text, model, directories, req) 
         }
         case 'vllm': {
             const { getVllmVector } = await import('../../src/vectors/vllm-vectors.js');
-            return await getVllmVector(text, req.body.apiUrl, model, directories);
+            const apiUrl = req.body?.apiUrl || 'http://localhost:8000';
+            return await getVllmVector(text, apiUrl, model, directories);
         }
         case 'palm':
         case 'vertexai': {
@@ -903,7 +907,9 @@ async function _getLegacySingleEmbedding(source, text, model, directories, req) 
         }
         case 'extras': {
             const { getExtrasVector } = await import('../../src/vectors/extras-vectors.js');
-            return await getExtrasVector(text, req.body.extrasUrl, req.body.extrasKey);
+            const extrasUrl = req.body?.extrasUrl || 'http://localhost:5100';
+            const extrasKey = req.body?.extrasKey || '';
+            return await getExtrasVector(text, extrasUrl, extrasKey);
         }
         default:
             throw new Error(`Unknown vector source: ${source}`);
@@ -1658,11 +1664,30 @@ async function scanAllSourcesForCollections(vectorsPath) {
                 const healthy = await qdrantBackend.healthCheck();
                 if (healthy) {
                     // List items from vecthare_main collection
-                    const items = await qdrantBackend.listItems('vecthare_main', {});
-                    if (items.length > 0) {
-                        allCollections.push({
-                            id: 'vecthare_main',
-                            source: 'qdrant',
+                    const collections = await qdrantBackend.getCollections();
+                    const hasVecthareMain = collections.some(col => col.name === 'vecthare_main'); //just-in-case support for multitenancy?
+
+                    for (const collectionName of collections) {
+                        const items = await qdrantBackend.listItems(collectionName, {});
+                        console.log('Discovered Qdrant Collection:', collectionName + " " + items.length + " items");
+
+                        // Extract source from collection name (format: "source:id" or "backend:source:id")
+                        let source = 'unknown';
+                        const parts = collectionName.split(':');
+                        if (parts.length === 2) {
+                            // Format: "source:id"
+                            source = parts[0];
+                        } else if (parts.length === 3) {
+                            // Format: "backend:source:id"
+                            source = parts[1];
+                        } else if (items.length > 0 && items[0].metadata?.embeddingSource) {
+                            // Fallback: get from item metadata
+                            source = items[0].metadata.embeddingSource;
+                        }
+
+                         allCollections.push({
+                            id: collectionName,
+                            source: source,
                             backend: 'qdrant',
                             chunkCount: items.length,
                             modelCount: 1
