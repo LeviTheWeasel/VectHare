@@ -3,7 +3,7 @@
  * VECTHARE KEYWORD LEARNER
  * ============================================================================
  * Analyzes individual entries to suggest keywords using multiple methods:
- * 
+ *
  * 1. Frequency-based: Words appearing X times in an entry
  * 2. YAKE: Advanced statistical keyword extraction algorithm
  *
@@ -253,7 +253,7 @@ export function analyzeEntry(text) {
  */
 export async function extractYakeKeywords(text, options = {}) {
     const yakeSettings = getYakeSettings();
-    
+
     const {
         language = yakeSettings.language,
         maxKeywords = yakeSettings.maxKeywords,
@@ -285,7 +285,7 @@ export async function extractYakeKeywords(text, options = {}) {
         }
 
         const data = await response.json();
-        
+
         // Convert YAKE format to our format
         return data.keywords.map(kw => ({
             word: kw.text,
@@ -313,9 +313,9 @@ export async function checkYakeHealth(serverUrl) {
         const response = await fetch(`${url}/health`, {
             method: 'GET',
         });
-        
+
         if (!response.ok) return false;
-        
+
         const data = await response.json();
         return data.status === 'healthy';
     } catch (error) {
@@ -336,7 +336,7 @@ export async function checkYakeHealth(serverUrl) {
  */
 export async function extractKeywordsHybrid(text, options = {}) {
     const yakeSettings = getYakeSettings();
-    
+
     const {
         threshold = 3,
         maxKeywords = yakeSettings.maxKeywords,
@@ -363,7 +363,7 @@ export async function extractKeywordsHybrid(text, options = {}) {
     // Get YAKE keywords if enabled
     if (useYake) {
         const yakeAvailable = await checkYakeHealth(yakeOptions.serverUrl);
-        
+
         if (yakeAvailable) {
             const yakeKeywords = await extractYakeKeywords(text, yakeOptions);
             for (const kw of yakeKeywords) {
@@ -394,4 +394,35 @@ export async function extractKeywordsHybrid(text, options = {}) {
     });
 
     return allKeywords.slice(0, maxKeywords);
+}
+
+/**
+ * Extract keywords using the configured method from settings
+ * This is the main entry point that respects user's keyword extraction preference
+ * @param {string} text - Entry content
+ * @param {object} options - Extraction options (overrides defaults)
+ * @returns {Promise<Array<string>>} Array of keyword strings
+ */
+export async function extractKeywords(text, options = {}) {
+    const settings = extension_settings.vecthare || {};
+    const method = settings.keyword_extraction_method || 'frequency';
+
+    try {
+        switch (method) {
+            case 'yake':
+                const yakeKeywords = await extractYakeKeywords(text, options);
+                return yakeKeywords.map(kw => kw.word);
+
+            case 'hybrid':
+                const hybridKeywords = await extractKeywordsHybrid(text, options);
+                return hybridKeywords.map(kw => kw.word);
+
+            case 'frequency':
+            default:
+                return extractSuggestedKeywords(text, options.threshold || 3);
+        }
+    } catch (error) {
+        console.warn('[VectHare Keyword Learner] Extraction failed, falling back to frequency:', error);
+        return extractSuggestedKeywords(text, options.threshold || 3);
+    }
 }

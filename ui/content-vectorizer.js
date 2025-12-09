@@ -180,6 +180,42 @@ function createModal() {
                         </div>
                     </div>
 
+                    <!-- Step 3.5: Keyword Extraction Method -->
+                    <div class="vecthare-cv-section vecthare-cv-keyword-section vecthare-cv-subsequent">
+                        <div class="vecthare-cv-section-header">
+                            <span class="vecthare-cv-step-number">3.5</span>
+                            <span class="vecthare-cv-section-title">Keyword Extraction</span>
+                            <button class="vecthare-cv-collapse-btn" data-target="keyword">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="vecthare-cv-collapsible" id="vecthare_cv_keyword_content">
+                            <div class="vecthare-cv-radio-group">
+                                <label class="vecthare-cv-radio-label">
+                                    <input type="radio" name="vecthare_cv_keyword_method" value="frequency" checked />
+                                    <div class="vecthare-cv-radio-content">
+                                        <span class="vecthare-cv-radio-title">Frequency-based</span>
+                                        <span class="vecthare-cv-radio-desc">Fast word frequency counting</span>
+                                    </div>
+                                </label>
+                                <label class="vecthare-cv-radio-label">
+                                    <input type="radio" name="vecthare_cv_keyword_method" value="yake" />
+                                    <div class="vecthare-cv-radio-content">
+                                        <span class="vecthare-cv-radio-title">YAKE</span>
+                                        <span class="vecthare-cv-radio-desc">Statistical extraction (requires server)</span>
+                                    </div>
+                                </label>
+                                <label class="vecthare-cv-radio-label">
+                                    <input type="radio" name="vecthare_cv_keyword_method" value="hybrid" />
+                                    <div class="vecthare-cv-radio-content">
+                                        <span class="vecthare-cv-radio-title">Hybrid</span>
+                                        <span class="vecthare-cv-radio-desc">Combines both methods</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Step 4: Type-Specific Options -->
                     <div class="vecthare-cv-section vecthare-cv-options-section vecthare-cv-subsequent">
                         <div class="vecthare-cv-section-header">
@@ -704,6 +740,11 @@ function updateChunkingSection(type) {
     $('#vecthare_cv_overlap').val(chunkOverlap);
     $('#vecthare_cv_overlap_val').text(chunkOverlap === 0 ? 'Off' : chunkOverlap);
 
+    // Initialize keyword extraction method
+    const settings = extension_settings.vecthare || {};
+    const keywordMethod = settings.keyword_extraction_method || 'frequency';
+    $(`input[name="vecthare_cv_keyword_method"][value="${keywordMethod}"]`).prop('checked', true);
+
     // Show/hide size controls based on strategy type
     updateSizeControlsVisibility();
 }
@@ -1130,6 +1171,20 @@ function bindEvents() {
         $('#vecthare_cv_strategy_desc').text(selected?.description || '');
         currentSettings.strategy = strategy;
         updateSizeControlsVisibility();
+    });
+
+    // Keyword extraction method
+    $('input[name="vecthare_cv_keyword_method"]').on('change', function() {
+        if ($(this).is(':checked')) {
+            const method = $(this).val();
+            currentSettings.keywordMethod = method;
+
+            // Update global setting
+            const settings = extension_settings.vecthare || {};
+            settings.keyword_extraction_method = method;
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+        }
     });
 
     // Size sliders

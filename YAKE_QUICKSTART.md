@@ -65,7 +65,17 @@ curl http://localhost:5555/health
 
 ## Usage Examples
 
-### 1. Basic YAKE Extraction
+### 1. Using the Main Function (Respects UI Settings)
+
+```javascript
+import { extractKeywords } from './core/keyword-learner.js';
+
+const text = "Your text here...";
+const keywords = await extractKeywords(text);
+// Automatically uses method selected in UI: frequency, yake, or hybrid
+```
+
+### 2. Basic YAKE Extraction
 
 ```javascript
 import { extractYakeKeywords } from './core/keyword-learner.js';
@@ -133,6 +143,7 @@ Settings in `index.js` (or override in function calls):
 
 ```javascript
 {
+    keyword_extraction_method: 'frequency',    // 'frequency', 'yake', or 'hybrid'
     yake_enabled: true,                        // Enable YAKE
     yake_server_url: 'http://localhost:5555',  // Server URL
     yake_max_keywords: 10,                     // Max keywords
@@ -141,6 +152,16 @@ Settings in `index.js` (or override in function calls):
     yake_window_size: 1,                       // N-gram size
 }
 ```
+
+### UI Configuration
+
+In VectHare settings panel under "Vectorization Options":
+
+- **Frequency-based**: Fast word frequency counting (default)
+- **YAKE**: Advanced statistical extraction (requires server)
+- **Hybrid (Both)**: Combines both methods for best results
+
+The main `extractKeywords()` function will automatically use your selected method.
 
 ## Common Issues
 
@@ -203,7 +224,11 @@ Content-Type: application/json
 ```
 
 ### JavaScript Functions
+
 ```javascript
+// Main extraction (respects UI setting)
+await extractKeywords(text, options)
+
 // Extract with YAKE
 await extractYakeKeywords(text, options)
 

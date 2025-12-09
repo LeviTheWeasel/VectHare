@@ -77,6 +77,7 @@ const defaultSettings = {
     bananabread_api_key: '', // Stored here since custom keys aren't returned by ST's readSecretState()
 
     // Keyword learning (YAKE integration)
+    keyword_extraction_method: 'frequency', // 'frequency' or 'yake' or 'hybrid'
     yake_enabled: true,
     yake_server_url: 'http://localhost:5555',
     yake_max_keywords: 10,

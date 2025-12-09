@@ -46,7 +46,7 @@ def health():
 def extract_keywords():
     """
     Extract keywords from text using YAKE algorithm.
-    
+
     Request JSON:
     {
         "text": "Text to analyze",
@@ -56,7 +56,7 @@ def extract_keywords():
         "windowSize": 1,  // optional, default: 1
         "topN": 10  // optional, default: 10
     }
-    
+
     Response JSON:
     {
         "keywords": [
@@ -68,19 +68,19 @@ def extract_keywords():
     """
     try:
         data = request.json
-        
+
         if not data or 'text' not in data:
             return jsonify({
                 'error': 'Missing required field: text'
             }), 400
-        
+
         text = data['text']
-        
+
         if not text or not isinstance(text, str):
             return jsonify({
                 'error': 'Invalid text field: must be non-empty string'
             }), 400
-        
+
         # Extract parameters with defaults
         language = data.get('language', DEFAULT_LANGUAGE)
         max_keywords = data.get('maxKeywords', DEFAULT_MAX_KEYWORDS)
@@ -88,7 +88,7 @@ def extract_keywords():
         dedup_algo = data.get('deduplicationAlgo', DEFAULT_DEDUPLICATION_ALGO)
         window_size = data.get('windowSize', DEFAULT_WINDOW_SIZE)
         top_n = data.get('topN', DEFAULT_TOP_N)
-        
+
         # Initialize YAKE keyword extractor
         kw_extractor = yake.KeywordExtractor(
             lan=language,
@@ -98,12 +98,12 @@ def extract_keywords():
             top=top_n,
             features=None
         )
-        
+
         # Extract keywords
         # YAKE returns list of (keyword, score) tuples
         # Lower score = more relevant (YAKE uses inverse ranking)
         raw_keywords = kw_extractor.extract_keywords(text)
-        
+
         # Format results
         keywords = [
             {
@@ -112,12 +112,12 @@ def extract_keywords():
             }
             for kw, score in raw_keywords[:max_keywords]
         ]
-        
+
         return jsonify({
             'keywords': keywords,
             'count': len(keywords)
         })
-        
+
     except Exception as e:
         return jsonify({
             'error': str(e)
@@ -126,16 +126,16 @@ def extract_keywords():
 
 if __name__ == '__main__':
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='YAKE Keyword Extraction Server')
     parser.add_argument('--port', type=int, default=5555, help='Port to run server on (default: 5555)')
     parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind to (default: 127.0.0.1)')
-    
+
     args = parser.parse_args()
-    
+
     print(f"Starting YAKE server on {args.host}:{args.port}")
     print("Endpoints:")
     print(f"  - GET  http://{args.host}:{args.port}/health")
     print(f"  - POST http://{args.host}:{args.port}/extract")
-    
+
     app.run(host=args.host, port=args.port, debug=False)

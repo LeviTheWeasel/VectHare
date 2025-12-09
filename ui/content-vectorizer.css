@@ -644,6 +644,60 @@
 }
 
 /* ============================================================================
+ * KEYWORD EXTRACTION
+ * ============================================================================ */
+
+.vecthare-cv-radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.vecthare-cv-radio-label {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.vecthare-cv-radio-label:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.vecthare-cv-radio-label input[type="radio"] {
+    margin-right: 12px;
+    cursor: pointer;
+}
+
+.vecthare-cv-radio-label input[type="radio"]:checked ~ .vecthare-cv-radio-content {
+    opacity: 1;
+}
+
+.vecthare-cv-radio-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.vecthare-cv-radio-title {
+    font-weight: 600;
+    font-size: 0.95em;
+}
+
+.vecthare-cv-radio-desc {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+/* ============================================================================
  * OPTIONS
  * ============================================================================ */
 

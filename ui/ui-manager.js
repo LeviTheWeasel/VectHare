@@ -541,6 +541,28 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small class="vecthare_hint">How many messages to group together</small>
                             </div>
 
+                            <!-- Keyword Extraction Method -->
+                            <label style="margin-top: 16px;">
+                                <small>Keyword Extraction Method</small>
+                            </label>
+                            <div class="vecthare-radio-group">
+                                <label class="vecthare-radio-label">
+                                    <input type="radio" name="vecthare_keyword_method" value="frequency" class="vecthare-radio" />
+                                    <span>Frequency-based</span>
+                                </label>
+                                <label class="vecthare-radio-label">
+                                    <input type="radio" name="vecthare_keyword_method" value="yake" class="vecthare-radio" />
+                                    <span>YAKE</span>
+                                </label>
+                                <label class="vecthare-radio-label">
+                                    <input type="radio" name="vecthare_keyword_method" value="hybrid" class="vecthare-radio" />
+                                    <span>Hybrid (Both)</span>
+                                </label>
+                            </div>
+                            <div id="vecthare_keyword_method_info" class="vecthare_hint" style="margin-top: 4px;">
+                                <span id="vecthare_keyword_method_description"></span>
+                            </div>
+
                         </div>
                     </div>
 
@@ -1534,6 +1556,33 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
     $('#vecthare_batch_size_value').text(settings.batch_size || 4);
+
+    // Keyword extraction method
+    const keywordMethodDescriptions = {
+        frequency: 'Fast, simple word frequency counting. Good for short texts and real-time operations.',
+        yake: 'Advanced statistical extraction using YAKE algorithm. More accurate, requires Python server.',
+        hybrid: 'Combines both methods for best results. YAKE results prioritized with frequency fallback.',
+    };
+
+    function updateKeywordMethodUI(method) {
+        const description = keywordMethodDescriptions[method] || '';
+        $('#vecthare_keyword_method_description').text(description);
+    }
+
+    $('input[name="vecthare_keyword_method"]').each(function() {
+        const value = $(this).val();
+        $(this).prop('checked', value === (settings.keyword_extraction_method || 'frequency'));
+    });
+
+    $('input[name="vecthare_keyword_method"]').on('change', function() {
+        if ($(this).is(':checked')) {
+            settings.keyword_extraction_method = String($(this).val());
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+            updateKeywordMethodUI(settings.keyword_extraction_method);
+        }
+    });
+    updateKeywordMethodUI(settings.keyword_extraction_method || 'frequency');
 
     // Chunk size (for adaptive strategy)
     $('#vecthare_chunk_size')
