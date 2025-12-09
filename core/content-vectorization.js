@@ -24,6 +24,7 @@ import {
     COLLECTION_PREFIXES,
 } from './collection-ids.js';
 import { extractLorebookKeywords, extractTextKeywords, extractChatKeywords, EXTRACTION_LEVELS, DEFAULT_EXTRACTION_LEVEL, DEFAULT_BASE_WEIGHT } from './keyword-boost.js';
+import { extractKeywordsWithWeights } from './keyword-learner.js';
 import { cleanText, cleanMessages } from './text-cleaning.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
@@ -76,7 +77,7 @@ export async function vectorizeContent({ contentType, source, settings }) {
         // Step 3: Enrich and hash
         progressTracker.updateProgress(3, 'Processing chunks...');
         const collectionId = generateCollectionId(contentType, source, settings);
-        const enrichedChunks = enrichChunks(chunks, contentType, source, settings, preparedContent);
+        const enrichedChunks = await enrichChunks(chunks, contentType, source, settings, preparedContent);
         const hashedChunks = enrichedChunks.map(chunk => ({
             ...chunk,
             hash: getStringHash(chunk.text),
@@ -648,12 +649,12 @@ function generateCollectionId(contentType, source, settings) {
  * @param {object} settings - Vectorization settings including keyword options
  * @param {object} preparedContent - Prepared content data
  */
-function enrichChunks(chunks, contentType, source, settings, preparedContent) {
+async function enrichChunks(chunks, contentType, source, settings, preparedContent) {
     // Get keyword extraction settings
     const keywordLevel = settings.keywordLevel || 'balanced';
     const keywordBaseWeight = settings.keywordBaseWeight || 1.5;
 
-    return chunks.map((chunk, index) => {
+    return Promise.all(chunks.map(async (chunk, index) => {
         const chunkText = typeof chunk === 'string' ? chunk : chunk.text;
         let keywords = []; // Will hold {text, weight} objects
         let entryName = null;
@@ -669,31 +670,74 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent) {
             const triggerKeys = extractLorebookKeywords(entry);
             keywords = triggerKeys.map(k => ({ text: k, weight: keywordBaseWeight }));
 
-            // Also get auto-extracted keywords with frequency-based weights
+            // Also get auto-extracted keywords using configured method
             if (keywordLevel !== 'off') {
-                const autoKeywords = extractTextKeywords(entry.content || chunkText, {
-                    level: keywordLevel,
-                    baseWeight: keywordBaseWeight,
-                });
-                keywords = keywords.concat(autoKeywords);
+                const settings = extension_settings.vecthare || {};
+                const method = settings.keyword_extraction_method || 'frequency';
+
+                if (method === 'frequency') {
+                    // Use traditional frequency-based extraction with weights
+                    const autoKeywords = extractTextKeywords(entry.content || chunkText, {
+                        level: keywordLevel,
+                        baseWeight: keywordBaseWeight,
+                    });
+                    keywords = keywords.concat(autoKeywords);
+                } else {
+                    // Use new extraction method (YAKE or hybrid)
+                    const extractedWords = await extractKeywords(entry.content || chunkText, {
+                        threshold: 2,
+                        maxKeywords: 15,
+                    });
+                    // Convert to weighted format
+                    const autoKeywords = extractedWords.map(word => ({
+                        text: word,
+                        weight: keywordBaseWeight,
+                    }));
+                    keywords = keywords.concat(autoKeywords);
+                }
             }
         } else if (contentType === 'chat') {
-            // For chat, use proper noun detection (capitalized words mid-sentence)
+            // For chat, use proper noun detection or configured method
             if (keywordLevel !== 'off') {
-                keywords = extractChatKeywords(chunkText, {
-                    baseWeight: keywordBaseWeight,
-                });
+                const settings = extension_settings.vecthare || {};
+                const method = settings.keyword_extraction_method || 'frequency';
+
+                if (method === 'frequency') {
+                    // Use chat-specific proper noun detection
+                    keywords = extractChatKeywords(chunkText, {
+                        baseWeight: keywordBaseWeight,
+                    });
+                } else {
+                    // Use new extraction method with preserved weights
+                    keywords = await extractKeywordsWithWeights(chunkText, {
+                        threshold: 2,
+                        maxKeywords: 10,
+                        baseWeight: keywordBaseWeight,
+                    });
+                }
             }
         } else {
-            // For other content (url, wiki, document, youtube), use frequency-based extraction
+            // For other content (url, wiki, document, youtube), use configured method
             if (keywordLevel !== 'off') {
-                keywords = extractTextKeywords(chunkText, {
-                    level: keywordLevel,
-                    baseWeight: keywordBaseWeight,
-                });
+                const settings = extension_settings.vecthare || {};
+                const method = settings.keyword_extraction_method || 'frequency';
+
+                if (method === 'frequency') {
+                    // Use traditional frequency-based extraction
+                    keywords = extractTextKeywords(chunkText, {
+                        level: keywordLevel,
+                        baseWeight: keywordBaseWeight,
+                    });
+                } else {
+                    // Use new extraction method with preserved weights
+                    keywords = await extractKeywordsWithWeights(chunkText, {
+                        threshold: 2,
+                        maxKeywords: 15,
+                        baseWeight: keywordBaseWeight,
+                    });
+                }
             }
         }
-
         // Add character name as keyword with higher weight (it's the main subject)
         if (contentType === 'character' && preparedContent.character?.name) {
             keywords.push({
@@ -734,7 +778,7 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent) {
                 ...(chunk.metadata || {}),
             },
         };
-    });
+    }));
 }
 
 /**

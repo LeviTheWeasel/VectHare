@@ -397,6 +397,68 @@ export async function extractKeywordsHybrid(text, options = {}) {
 }
 
 /**
+ * Extract keywords with weights using the configured method from settings
+ * Returns objects with both text and weight for vector boosting
+ * @param {string} text - Entry content
+ * @param {object} options - Extraction options (overrides defaults)
+ * @param {number} options.baseWeight - Base weight for keywords without scores (default: 1.5)
+ * @returns {Promise<Array<{text: string, weight: number}>>} Array of keywords with weights
+ */
+export async function extractKeywordsWithWeights(text, options = {}) {
+    const settings = extension_settings.vecthare || {};
+    const method = settings.keyword_extraction_method || 'frequency';
+    const baseWeight = options.baseWeight || 1.5;
+
+    try {
+        switch (method) {
+            case 'yake':
+                const yakeKeywords = await extractYakeKeywords(text, options);
+                // YAKE scores are 0-1, lower is better. Convert to weight (invert and scale)
+                // Score 0 -> weight 3.0, Score 0.5 -> weight 1.5, Score 1 -> weight 0.5
+                return yakeKeywords.map(kw => ({
+                    text: kw.word,
+                    weight: Math.max(0.5, baseWeight * (1 - kw.score) * 2),
+                }));
+
+            case 'hybrid':
+                const hybridKeywords = await extractKeywordsHybrid(text, options);
+                // Hybrid has both YAKE (with score) and frequency (with count)
+                return hybridKeywords.map(kw => {
+                    if (kw.source === 'yake' && kw.score !== undefined) {
+                        return {
+                            text: kw.word,
+                            weight: Math.max(0.5, baseWeight * (1 - kw.score) * 2),
+                        };
+                    } else {
+                        // Frequency-based, use count to boost weight
+                        const countBoost = Math.min(kw.count / 3, 2); // Cap at 2x boost
+                        return {
+                            text: kw.word,
+                            weight: baseWeight * countBoost,
+                        };
+                    }
+                });
+
+            case 'frequency':
+            default:
+                // For frequency, use the existing weighted extraction
+                const freqKeywords = getSuggestedKeywordsForEntry(text, options.threshold || 3);
+                return freqKeywords.map(kw => ({
+                    text: kw.word,
+                    weight: baseWeight * Math.min(kw.count / 3, 2),
+                }));
+        }
+    } catch (error) {
+        console.warn('[VectHare Keyword Learner] Extraction failed, falling back to frequency:', error);
+        const freqKeywords = getSuggestedKeywordsForEntry(text, options.threshold || 3);
+        return freqKeywords.map(kw => ({
+            text: kw.word,
+            weight: baseWeight * Math.min(kw.count / 3, 2),
+        }));
+    }
+}
+
+/**
  * Extract keywords using the configured method from settings
  * This is the main entry point that respects user's keyword extraction preference
  * @param {string} text - Entry content
