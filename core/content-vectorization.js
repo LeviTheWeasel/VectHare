@@ -685,8 +685,8 @@ async function enrichChunks(chunks, contentType, source, settings, preparedConte
                 } else {
                     // Use new extraction method (YAKE or hybrid)
                     const extractedWords = await extractKeywords(entry.content || chunkText, {
-                        threshold: 2,
-                        maxKeywords: 15,
+                        threshold: settings.keyword_extraction_threshold || 2,
+                        maxKeywords: settings.yake_max_keywords || 15,
                     });
                     // Convert to weighted format
                     const autoKeywords = extractedWords.map(word => ({
@@ -710,8 +710,8 @@ async function enrichChunks(chunks, contentType, source, settings, preparedConte
                 } else {
                     // Use new extraction method with preserved weights
                     keywords = await extractKeywordsWithWeights(chunkText, {
-                        threshold: 2,
-                        maxKeywords: 10,
+                        threshold: settings.keyword_extraction_threshold || 2,
+                        maxKeywords: settings.yake_max_keywords || 10,
                         baseWeight: keywordBaseWeight,
                     });
                 }
@@ -731,8 +731,8 @@ async function enrichChunks(chunks, contentType, source, settings, preparedConte
                 } else {
                     // Use new extraction method with preserved weights
                     keywords = await extractKeywordsWithWeights(chunkText, {
-                        threshold: 2,
-                        maxKeywords: 15,
+                        threshold: settings.keyword_extraction_threshold || 2,
+                        maxKeywords: settings.yake_max_keywords || 15,
                         baseWeight: keywordBaseWeight,
                     });
                 }

@@ -214,6 +214,22 @@ function createModal() {
                                 </label>
                             </div>
 
+                            <!-- Frequency threshold for frequency-based and hybrid -->
+                            <div class="vecthare-cv-freq-settings" id="vecthare_cv_freq_settings" style="margin-top: 15px;">
+                                <div class="vecthare-cv-slider-row">
+                                    <label>
+                                        Frequency Threshold
+                                        <span class="vecthare-cv-value" id="vecthare_cv_keyword_threshold_val">2</span> occurrences
+                                    </label>
+                                    <input type="range" id="vecthare_cv_keyword_threshold"
+                                           min="1" max="10" step="1" value="2">
+                                    <div class="vecthare-cv-slider-hints">
+                                        <span>Lenient</span>
+                                        <span>Strict</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- YAKE-specific settings -->
                             <div class="vecthare-cv-yake-settings" id="vecthare_cv_yake_settings" style="display: none; margin-top: 15px;">
                                 <div class="vecthare-cv-slider-row">
@@ -761,16 +777,26 @@ function updateChunkingSection(type) {
     const keywordMethod = settings.keyword_extraction_method || 'frequency';
     $(`input[name="vecthare_cv_keyword_method"][value="${keywordMethod}"]`).prop('checked', true);
 
+    // Set keyword extraction threshold
+    const keywordThreshold = settings.keyword_extraction_threshold || 2;
+    $('#vecthare_cv_keyword_threshold').val(keywordThreshold);
+    $('#vecthare_cv_keyword_threshold_val').text(keywordThreshold);
+
     // Set YAKE max keywords
     const yakeMaxKeywords = settings.yake_max_keywords || 10;
     $('#vecthare_cv_yake_max_keywords').val(yakeMaxKeywords);
     $('#vecthare_cv_yake_max_keywords_val').text(yakeMaxKeywords);
 
-    // Show/hide YAKE settings based on method
-    if (keywordMethod === 'yake' || keywordMethod === 'hybrid') {
+    // Show/hide settings based on method
+    if (keywordMethod === 'yake') {
         $('#vecthare_cv_yake_settings').show();
+        $('#vecthare_cv_freq_settings').hide();
+    } else if (keywordMethod === 'hybrid') {
+        $('#vecthare_cv_yake_settings').show();
+        $('#vecthare_cv_freq_settings').show();
     } else {
         $('#vecthare_cv_yake_settings').hide();
+        $('#vecthare_cv_freq_settings').show();
     }
 
     // Show/hide size controls based on strategy type
@@ -1213,13 +1239,31 @@ function bindEvents() {
             Object.assign(extension_settings.vecthare, settings);
             saveSettingsDebounced();
 
-            // Show/hide YAKE settings
-            if (method === 'yake' || method === 'hybrid') {
+            // Show/hide settings based on method
+            if (method === 'yake') {
                 $('#vecthare_cv_yake_settings').show();
+                $('#vecthare_cv_freq_settings').hide();
+            } else if (method === 'hybrid') {
+                $('#vecthare_cv_yake_settings').show();
+                $('#vecthare_cv_freq_settings').show();
             } else {
                 $('#vecthare_cv_yake_settings').hide();
+                $('#vecthare_cv_freq_settings').show();
             }
         }
+    });
+
+    // Keyword extraction threshold slider
+    $('#vecthare_cv_keyword_threshold').on('input', function() {
+        const value = $(this).val();
+        $('#vecthare_cv_keyword_threshold_val').text(value);
+        currentSettings.keywordThreshold = parseInt(value);
+
+        // Update global setting
+        const settings = extension_settings.vecthare || {};
+        settings.keyword_extraction_threshold = parseInt(value);
+        Object.assign(extension_settings.vecthare, settings);
+        saveSettingsDebounced();
     });
 
     // YAKE max keywords slider

@@ -78,6 +78,7 @@ const defaultSettings = {
 
     // Keyword learning (YAKE integration)
     keyword_extraction_method: 'frequency', // 'frequency' or 'yake' or 'hybrid'
+    keyword_extraction_threshold: 2, // Minimum word occurrences for frequency-based extraction
     yake_enabled: true,
     yake_server_url: 'http://localhost:5555',
     yake_max_keywords: 10,
