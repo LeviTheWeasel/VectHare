@@ -5,3 +5,6 @@ docs/*.md
 
 # Local development notes
 VECTOR_LIST.md
+
+#python
+venv/
