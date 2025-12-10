@@ -89,7 +89,7 @@ class DynamicRateLimiter {
                 console.log(`VectHare: Rate limit reached. Waiting ${Math.round(waitTime / 1000)}s...`);
                 await AsyncUtils.sleep(waitTime + 100); // Add small buffer
             }
-            
+
             // Recursive call to re-check
             return this.execute(fn, settings);
         }
@@ -308,7 +308,7 @@ async function createKoboldCppEmbeddings(items, settings) {
             }
 
             const cleanUrl = serverUrl.replace(/\/$/, '');
-            const fetchPromise = fetch(`${cleanUrl}/v1/embeddings`, {
+            const response = await fetch(`${cleanUrl}/v1/embeddings`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -319,28 +319,26 @@ async function createKoboldCppEmbeddings(items, settings) {
                 }),
             });
 
-            const response = await AsyncUtils.timeout(fetchPromise, API_TIMEOUT_MS, 'KoboldCpp embedding request timed out');
-
             if (!response.ok) {
                 // Try legacy endpoint if v1 fails (fallback)
                 if (response.status === 404) {
                     console.warn('VectHare: KoboldCpp /v1/embeddings not found, trying legacy endpoint...');
                     // Fallthrough to retry or handle legacy?
-                    // Better to throw specific error so we can potentially retry with legacy logic if we wanted, 
+                    // Better to throw specific error so we can potentially retry with legacy logic if we wanted,
                     // but for now let's stick to the directive of using OpenAI compatible endpoint.
                 }
                 throw new Error(`Failed to get KoboldCpp embeddings: ${response.status} ${response.statusText}`);
             }
 
             const data = await response.json();
-            
+
             // OpenAI format: { data: [{ embedding: [], index: 0, ... }, ...], model: "..." }
             if (!data.data || !Array.isArray(data.data) || data.data.length !== cleanedItems.length) {
                  throw new Error('Invalid response from KoboldCpp embeddings (OpenAI format)');
             }
 
             const embeddings = /** @type {Record<string, number[]>} */ ({});
-            
+
             // Sort by index to ensure order matches items
             data.data.sort((a, b) => a.index - b.index);
 
@@ -574,9 +572,10 @@ export async function getSavedHashes(collectionId, settings, includeMetadata = f
  * @param {string} collectionId - The collection to insert into
  * @param {{ hash: number, text: string }[]} items - The items to insert
  * @param {object} settings VectHare settings object
+ * @param {Function} onProgress - Optional callback (embedded, total) => void for progress updates
  * @returns {Promise<void>}
  */
-export async function insertVectorItems(collectionId, items, settings) {
+export async function insertVectorItems(collectionId, items, settings, onProgress = null) {
     const backend = await getBackend(settings);
 
     // Sources that require client-side embedding generation
@@ -586,21 +585,36 @@ export async function insertVectorItems(collectionId, items, settings) {
     if (clientSideEmbeddingSources.includes(settings.source)) {
         console.log(`VectHare: Generating client-side embeddings for ${settings.source}...`);
         // Extract text strings - getAdditionalArgs expects string[], not objects
-        const textStrings = items.map(item => item.text || item);
+        const textStrings = items.map(item => {
+            const text = item.text || item;
+            // Ensure we have valid text (not empty after cleaning)
+            return typeof text === 'string' && text.trim().length > 0 ? text : ' ';
+        });
         const additionalArgs = await getAdditionalArgs(textStrings, settings);
 
         // additionalArgs.embeddings is a Record<string, number[]> where keys are original text
-        // We need to match by text content, not array index
-        if (additionalArgs.embeddings && Object.keys(additionalArgs.embeddings).length === items.length) {
+        // Handle both duplicate texts and ensure all items get embeddings
+        if (additionalArgs.embeddings) {
+            let missingEmbeddings = 0;
             // Attach embeddings to items as .vector property
             for (let i = 0; i < items.length; i++) {
-                const text = items[i].text || items[i];
-                items[i].vector = additionalArgs.embeddings[text];
+                const text = textStrings[i];
+                const embedding = additionalArgs.embeddings[text];
+                if (embedding && Array.isArray(embedding) && embedding.length > 0) {
+                    items[i].vector = embedding;
+                } else {
+                    missingEmbeddings++;
+                    console.warn(`VectHare: No embedding found for item ${i}, text: "${text.substring(0, 50)}..."`);
+                }
             }
+
+            if (missingEmbeddings > 0) {
+                throw new Error(`VectHare: Failed to generate embeddings for ${settings.source} - ${missingEmbeddings} items missing embeddings`);
+            }
+
             console.log(`VectHare: Attached ${items.length} embeddings to items`);
         } else {
-            const gotCount = additionalArgs.embeddings ? Object.keys(additionalArgs.embeddings).length : 0;
-            throw new Error(`VectHare: Failed to generate embeddings for ${settings.source} - got ${gotCount} embeddings for ${items.length} items`);
+            throw new Error(`VectHare: No embeddings returned from ${settings.source}`);
         }
     }
 
@@ -620,7 +634,7 @@ export async function insertVectorItems(collectionId, items, settings) {
                     await backend.insertVectorItems(collectionId, batches[i], settings);
                 }, RETRY_CONFIG);
             }, settings);
-            
+
             // Optional: UI update for progress could go here if we passed a callback
         }
     } else {
