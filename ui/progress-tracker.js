@@ -26,6 +26,8 @@ export class ProgressTracker {
             currentBatch: 0,
             totalBatches: 0,
             totalChunks: 0,
+            embeddedChunks: 0,
+            totalChunksToEmbed: 0,
             startTime: null,
             errors: [],
         };
@@ -46,6 +48,8 @@ export class ProgressTracker {
             currentBatch: 0,
             totalBatches: 0,
             totalChunks: 0,
+            embeddedChunks: 0,
+            totalChunksToEmbed: 0,
             startTime: Date.now(),
             errors: [],
         };
@@ -104,6 +108,25 @@ export class ProgressTracker {
      */
     updateChunks(totalChunks) {
         this.stats.totalChunks = totalChunks;
+        this.updateDisplay();
+    }
+
+    /**
+     * Update embedding progress (for showing embedded/remaining chunks)
+     * @param {number} embeddedChunks - Number of chunks embedded so far
+     * @param {number} totalChunksToEmbed - Total chunks to embed
+     */
+    updateEmbeddingProgress(embeddedChunks, totalChunksToEmbed) {
+        console.log(`[ProgressTracker] updateEmbeddingProgress: ${embeddedChunks}/${totalChunksToEmbed}`);
+        this.stats.embeddedChunks = embeddedChunks;
+        this.stats.totalChunksToEmbed = totalChunksToEmbed;
+        this.updateDisplay();
+    }
+
+    /**
+     * Update current item being processed (e.g., "Message 3, Chunk 2/5")
+        this.stats.embeddedChunks = embeddedChunks;
+        this.stats.totalChunksToEmbed = totalChunksToEmbed;
         this.updateDisplay();
     }
 
@@ -265,10 +288,16 @@ export class ProgressTracker {
         document.getElementById('vecthare_progress_processed').textContent =
             `${this.stats.processedItems} / ${this.stats.totalItems}`;
 
-        // Show chunks - if more chunks than messages, it means messages are being split
+        // Show chunks - with embedding progress if available
         const chunksEl = document.getElementById('vecthare_progress_chunks');
         if (chunksEl) {
-            if (this.stats.totalChunks > this.stats.processedItems && this.stats.processedItems > 0) {
+            if (this.stats.totalChunksToEmbed > 0) {
+                // Show embedding progress: "45/100 (55 left)"
+                const remaining = this.stats.totalChunksToEmbed - this.stats.embeddedChunks;
+                const displayText = `${this.stats.embeddedChunks}/${this.stats.totalChunksToEmbed} (${remaining} left)`;
+                console.log(`[ProgressTracker] Updating chunks display with embedding progress: "${displayText}"`);
+                chunksEl.textContent = displayText;
+            } else if (this.stats.totalChunks > this.stats.processedItems && this.stats.processedItems > 0) {
                 // Messages are being split into multiple chunks
                 const avgChunks = (this.stats.totalChunks / this.stats.processedItems).toFixed(1);
                 chunksEl.textContent = `${this.stats.totalChunks} (~${avgChunks}/msg)`;

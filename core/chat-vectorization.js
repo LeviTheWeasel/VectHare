@@ -464,7 +464,12 @@ export async function synchronizeChat(settings, batchSize = 5) {
 
                 // Insert chunks (insertVectorItems handles duplicates at DB level)
                 if (chunks.length > 0) {
-                    await insertVectorItems(collectionId, chunks, settings);
+                    await insertVectorItems(collectionId, chunks, settings, (embedded, total) => {
+                        // Update progress tracker with embedding progress
+                        console.log(`[Chat Vectorization] Embedding progress callback: ${embedded}/${total}`);
+                        progressTracker.updateEmbeddingProgress(embedded, total);
+                        progressTracker.updateCurrentItem(`${label} ${itemsProcessed}/${batchSize} - Embedding: ${embedded}/${total} chunks`);
+                    });
                     chunksCreated += chunks.length;
 
                     // Register on first successful insert (prevents ghost collections)
