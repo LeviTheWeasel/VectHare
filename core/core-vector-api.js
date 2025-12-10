@@ -635,7 +635,13 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
                 }, RETRY_CONFIG);
             }, settings);
 
-            // Optional: UI update for progress could go here if we passed a callback
+            // Update progress after each batch
+            if (onProgress) {
+                const embeddedCount = (i + 1) * BATCH_SIZE;
+                const actualEmbedded = Math.min(embeddedCount, items.length);
+                console.log(`[Core Vector API] Calling progress callback: ${actualEmbedded}/${items.length}`);
+                onProgress(actualEmbedded, items.length);
+            }
         }
     } else {
         // No rate limit - execute all at once (backend handles it)
