@@ -852,6 +852,53 @@ async function getEmbeddingForSource(source, text, model, directories, req) {
 }
 
 /**
+ * Helper function for KoboldCpp embedding generation
+ * @param {string} text - Text to embed
+ * @param {string} model - Model name
+ * @param {object} req - Request object containing apiUrl
+ * @returns {Promise<number[]>} Embedding vector
+ */
+async function _getKoboldCppEmbedding(text, model, req) {
+    const apiUrl = req.body?.apiUrl || 'http://localhost:5001';
+
+    let url;
+    try {
+        url = new URL(apiUrl);
+        // Ensure we're hitting the embeddings endpoint
+        if (!url.pathname.includes('/embeddings')) {
+            url.pathname = url.pathname.replace(/\/?$/, '/v1/embeddings').replace(/\/+/g, '/');
+        }
+    } catch (e) {
+        throw new Error(`KoboldCpp: Invalid URL format "${apiUrl}" - ${e.message}`);
+    }
+
+    const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            input: text,
+            model: model || 'koboldcpp',
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`KoboldCpp: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    // OpenAI format: { data: [{ embedding: [...] }] }
+    if (data?.data?.[0]?.embedding) {
+        return data.data[0].embedding;
+    }
+    // Fallback: direct embedding array
+    if (Array.isArray(data?.embedding)) {
+        return data.embedding;
+    }
+    throw new Error('KoboldCpp: Invalid response format - no embedding found');
+}
+
+/**
  * Legacy single embedding function (renamed)
  */
 async function _getLegacySingleEmbedding(source, text, model, directories, req) {
@@ -879,44 +926,7 @@ async function _getLegacySingleEmbedding(source, text, model, directories, req) 
             return await getCohereVector(text, true, directories, model);
         }
         case 'koboldcpp': {
-            // KoboldCpp uses OpenAI-compatible /v1/embeddings endpoint
-            const apiUrl = req.body?.apiUrl || 'http://localhost:5001';
-
-            let url;
-            try {
-                url = new URL(apiUrl);
-                // Ensure we're hitting the embeddings endpoint
-                if (!url.pathname.includes('/embeddings')) {
-                    url.pathname = url.pathname.replace(/\/?$/, '/v1/embeddings').replace(/\/+/g, '/');
-                }
-            } catch (e) {
-                throw new Error(`KoboldCpp: Invalid URL format "${apiUrl}" - ${e.message}`);
-            }
-
-            const response = await fetch(url.toString(), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    input: text,
-                    model: model || 'koboldcpp',
-                }),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`KoboldCpp: ${response.status} ${response.statusText} - ${errorText}`);
-            }
-
-            const data = await response.json();
-            // OpenAI format: { data: [{ embedding: [...] }] }
-            if (data?.data?.[0]?.embedding) {
-                return data.data[0].embedding;
-            }
-            // Fallback: direct embedding array
-            if (Array.isArray(data?.embedding)) {
-                return data.embedding;
-            }
-            throw new Error('KoboldCpp: Invalid response format - no embedding found');
+            return await _getKoboldCppEmbedding(text, model, req);
         }
         case 'ollama': {
             const { getOllamaVector } = await import('../../src/vectors/ollama-vectors.js');
@@ -1469,44 +1479,7 @@ async function getEmbeddingForSource(source, text, model, directories, req) {
             return await getOpenAIVector(text, source, directories, effectiveModel);
         }
         case 'koboldcpp': {
-            // KoboldCpp uses OpenAI-compatible /v1/embeddings endpoint
-            const apiUrl = req.body?.apiUrl || 'http://localhost:5001';
-
-            let url;
-            try {
-                url = new URL(apiUrl);
-                // Ensure we're hitting the embeddings endpoint
-                if (!url.pathname.includes('/embeddings')) {
-                    url.pathname = url.pathname.replace(/\/?$/, '/v1/embeddings').replace(/\/+/g, '/');
-                }
-            } catch (e) {
-                throw new Error(`KoboldCpp: Invalid URL format "${apiUrl}" - ${e.message}`);
-            }
-
-            const response = await fetch(url.toString(), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    input: text,
-                    model: model || 'koboldcpp',
-                }),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`KoboldCpp: ${response.status} ${response.statusText} - ${errorText}`);
-            }
-
-            const data = await response.json();
-            // OpenAI format: { data: [{ embedding: [...] }] }
-            if (data?.data?.[0]?.embedding) {
-                return data.data[0].embedding;
-            }
-            // Fallback: direct embedding array
-            if (Array.isArray(data?.embedding)) {
-                return data.embedding;
-            }
-            throw new Error('KoboldCpp: Invalid response format - no embedding found');
+            return await _getKoboldCppEmbedding(text, model, req);
         }
         case 'nomicai': {
             const { getNomicAIVector } = await import('../../src/vectors/nomicai-vectors.js');
