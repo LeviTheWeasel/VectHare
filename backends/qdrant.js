@@ -60,12 +60,48 @@ function getActualCollectionId(collectionId, settings) {
 export class QdrantBackend extends VectorBackend {
     async initialize(settings) {
         // Get Qdrant config from settings
-        const config = {
-            host: settings.qdrant_host || 'localhost',
-            port: settings.qdrant_port || 6333,
-            url: settings.qdrant_url || null,
-            apiKey: settings.qdrant_api_key || null,
-        };
+        // Only send relevant config based on cloud vs local mode
+        let config;
+        
+        if (settings.qdrant_use_cloud) {
+            // Cloud mode: use URL and API key
+            config = {
+                url: settings.qdrant_url || null,
+                apiKey: settings.qdrant_api_key || null,
+            };
+            console.log('VectHare: Initializing Qdrant Cloud:', config.url);
+        } else {
+            // Local mode: use host and port
+            config = {
+                host: settings.qdrant_host || 'localhost',
+                port: settings.qdrant_port || 6333,
+            };
+            console.log('VectHare: Initializing local Qdrant:', `${config.host}:${config.port}`);
+        }
+
+        if (settings.qdrant_use_cloud) {
+            // Cloud mode: use URL and API key
+            config = {
+                url: settings.qdrant_url || null,
+                apiKey: settings.qdrant_api_key || null,
+                // Explicitly clear local settings to prevent conflicts
+                host: null,
+                port: null,
+            };
+            console.log('VectHare: Initializing Qdrant Cloud:', config.url);
+        } else {
+            // Local mode: use host and port
+            config = {
+                host: settings.qdrant_host || 'localhost',
+                port: settings.qdrant_port || 6333,
+                // Explicitly clear cloud settings to prevent conflicts
+                url: null,
+                apiKey: null,
+            };
+            console.log('VectHare: Initializing local Qdrant:', `${config.host}:${config.port}`);
+        }
+
+        console.log('VectHare: Sending Qdrant config to Similharity plugin:', JSON.stringify(config));
 
         const response = await fetch('/api/plugins/similharity/backend/init/qdrant', {
             method: 'POST',
@@ -78,6 +114,8 @@ export class QdrantBackend extends VectorBackend {
             throw new Error(`[Qdrant] Failed to initialize Qdrant: ${response.status} ${response.statusText} - ${errorBody}`);
         }
 
+        const responseData = await response.json().catch(() => ({}));
+        console.log('VectHare: Qdrant initialization response:', responseData);
         console.log('VectHare: Using Qdrant backend (production-grade vector search)');
     }
 
@@ -278,14 +316,31 @@ export class QdrantBackend extends VectorBackend {
                 }),
             });
 
-            if (!response.ok) {
-                const errorBody = await response.text().catch(() => 'No response body');
-                throw new Error(`[Qdrant] Failed to insert batch ${batchNum}/${batches.length} (${batch.length} vectors) into ${actualCollectionId}: ${response.status} ${response.statusText} - ${errorBody}`);
+        if (!response.ok) {
+            const errorBody = await response.text().catch(() => 'No response body');
+
+            // Check for dimension mismatch error
+            if (errorBody.includes('Vector dimension error') || errorBody.includes('dimension')) {
+                const dimensionMatch = errorBody.match(/expected dim: (\d+), got (\d+)/);
+                if (dimensionMatch) {
+                    const expectedDim = dimensionMatch[1];
+                    const gotDim = dimensionMatch[2];
+                    throw new Error(
+                        `[Qdrant] Vector dimension mismatch: Collection "${actualCollectionId}" expects ${expectedDim}-dimensional vectors, but received ${gotDim}-dimensional vectors. ` +
+                        `This happens when switching embedding models. Solution: Delete the collection in Database Browser or use Qdrant API to drop it, then re-vectorize.`
+                    );
+                }
+                throw new Error(
+                    `[Qdrant] Vector dimension mismatch in collection "${actualCollectionId}". ` +
+                    `This typically means you switched embedding models. Solution: Delete the collection and re-vectorize. Error: ${errorBody}`
+                );
             }
-
-            console.log(`VectHare Qdrant: Batch ${batchNum}/${batches.length} completed (${batch.length} vectors)`);
+            
+            throw new Error(`[Qdrant] Failed to insert ${items.length} vectors into ${actualCollectionId}: ${response.status} ${response.statusText} - ${errorBody}`);
         }
-
+        
+        console.log(`VectHare Qdrant: Batch ${batchNum}/${batches.length} completed (${batch.length} vectors)`);
+        
         // Register the collection after successful insert
         try {
             // Dynamic import to avoid circular dependency

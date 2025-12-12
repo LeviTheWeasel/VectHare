@@ -1607,7 +1607,7 @@ function bindSettingsEvents(settings, callbacks) {
     // Qdrant cloud toggle
     $('#vecthare_qdrant_use_cloud')
         .prop('checked', settings.qdrant_use_cloud || false)
-        .on('change', function() {
+        .on('change', async function() {
             settings.qdrant_use_cloud = $(this).prop('checked');
             Object.assign(extension_settings.vecthare, settings);
             saveSettingsDebounced();
@@ -1619,6 +1619,25 @@ function bindSettingsEvents(settings, callbacks) {
             } else {
                 $('#vecthare_qdrant_local_settings').show();
                 $('#vecthare_qdrant_cloud_settings').hide();
+            }
+
+            // Reset backend health to force re-initialization with new config
+            console.log('VectHare: Qdrant mode changed, forcing re-initialization...');
+            resetBackendHealth('qdrant');
+
+            // Proactively reinitialize if Qdrant is the current backend
+            if (settings.vector_backend === 'qdrant') {
+                try {
+                    const { initializeBackend } = await import('../backends/backend-manager.js');
+                    await initializeBackend('qdrant', settings, false);
+                    toastr.success(
+                        `Qdrant re-initialized in ${settings.qdrant_use_cloud ? 'cloud' : 'local'} mode`,
+                        'VectHare'
+                    );
+                } catch (e) {
+                    console.error('VectHare: Failed to reinitialize Qdrant:', e);
+                    toastr.warning('Failed to reinitialize Qdrant: ' + e.message, 'VectHare');
+                }
             }
         })
         .trigger('change');
