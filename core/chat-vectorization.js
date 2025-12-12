@@ -27,6 +27,7 @@ import { isBackendAvailable } from '../backends/backend-manager.js';
 import { applyDecayToResults, applySceneAwareDecay } from './temporal-decay.js';
 import { isChunkDisabledByScene } from './scenes.js';
 import { registerCollection, getCollectionRegistry } from './collection-loader.js';
+import { parseRegistryKey } from './collection-ids.js';
 import { isCollectionEnabled, filterActiveCollections } from './collection-metadata.js';
 import { progressTracker } from '../ui/progress-tracker.js';
 import { buildSearchContext, filterChunksByConditions, processChunkLinks } from './conditional-activation.js';
@@ -546,21 +547,19 @@ function gatherCollectionsToQuery(settings) {
     // Get all other registered collections that are enabled
     const registry = getCollectionRegistry();
     for (const registryKey of registry) {
-        // Parse registry key (format: "source:collectionId" or just "collectionId")
-        let collectionId = registryKey;
-        if (registryKey.includes(':')) {
-            const colonIndex = registryKey.indexOf(':');
-            collectionId = registryKey.substring(colonIndex + 1);
-        }
+        // Use proper registry key parser to extract collection ID
+        const parsedKey = parseRegistryKey(registryKey);
+        const collectionId = parsedKey.collectionId;
 
         // Skip if this is the current chat collection (already handled above)
         if (collectionId === chatCollectionId) {
             continue;
         }
 
-        // Check if collection is enabled
+        // Check if collection is enabled (use registryKey for metadata lookup)
         if (isCollectionEnabled(registryKey)) {
-            collectionsToQuery.push(collectionId);
+            // Push registryKey, not collectionId - activation filters need the full key for metadata
+            collectionsToQuery.push(registryKey);
         }
     }
 
