@@ -68,6 +68,9 @@ export class QdrantBackend extends VectorBackend {
             config = {
                 url: settings.qdrant_url || null,
                 apiKey: settings.qdrant_api_key || null,
+                // Explicitly clear local settings to prevent conflicts
+                host: null,
+                port: null,
             };
             console.log('VectHare: Initializing Qdrant Cloud:', config.url);
         } else {
@@ -75,9 +78,14 @@ export class QdrantBackend extends VectorBackend {
             config = {
                 host: settings.qdrant_host || 'localhost',
                 port: settings.qdrant_port || 6333,
+                // Explicitly clear cloud settings to prevent conflicts
+                url: null,
+                apiKey: null,
             };
             console.log('VectHare: Initializing local Qdrant:', `${config.host}:${config.port}`);
         }
+
+        console.log('VectHare: Sending Qdrant config to Similharity plugin:', JSON.stringify(config));
 
         const response = await fetch('/api/plugins/similharity/backend/init/qdrant', {
             method: 'POST',
@@ -90,6 +98,8 @@ export class QdrantBackend extends VectorBackend {
             throw new Error(`[Qdrant] Failed to initialize Qdrant: ${response.status} ${response.statusText} - ${errorBody}`);
         }
 
+        const responseData = await response.json().catch(() => ({}));
+        console.log('VectHare: Qdrant initialization response:', responseData);
         console.log('VectHare: Using Qdrant backend (production-grade vector search)');
     }
 
