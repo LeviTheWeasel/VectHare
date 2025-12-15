@@ -52,7 +52,7 @@ function getProviderSpecificParams(settings, isQuery = false) {
         case 'ollama':
             params.apiUrl = settings.use_alt_endpoint
                 ? settings.alt_endpoint_url
-                : textgenerationwebui_settings.server_urls[textgen_types.OLLAMA];
+                : (textgenerationwebui_settings.server_urls[textgen_types.OLLAMA] || 'http://localhost:11434');
             params.keep = !!settings.ollama_keep;
             break;
 
@@ -216,42 +216,66 @@ export class StandardBackend extends VectorBackend {
         }
 
         try {
+            const requestPayload = {
+                collectionId: collectionId,
+                items: items.map(item => {
+                    // Include keywords in the text for embedding/indexing
+                    let textWithKeywords = item.text || '';
+                    if (item.keywords && item.keywords.length > 0) {
+                        const keywordTexts = item.keywords.map(kw => kw.text || kw).join(' ');
+                        textWithKeywords += ` [KEYWORDS: ${keywordTexts}]`;
+                    }
+
+                    return {
+                        hash: item.hash,
+                        text: textWithKeywords,
+                        index: item.index ?? 0,
+                    };
+                }),
+                source: settings.source || 'transformers',
+                model: model,
+                // Pass embeddings if pre-computed (for webllm, koboldcpp, bananabread)
+                embeddings: items[0]?.vector ? Object.fromEntries(items.map(i => {
+                    let textWithKeywords = i.text || '';
+                    if (i.keywords && i.keywords.length > 0) {
+                        const keywordTexts = i.keywords.map(kw => kw.text || kw).join(' ');
+                        textWithKeywords += ` [KEYWORDS: ${keywordTexts}]`;
+                    }
+                    return [textWithKeywords, i.vector];
+                })) : undefined,
+                ...providerParams,
+            };
+
+            // Log request details for debugging
+            console.log('[VectHare Debug] Vector insert request:', {
+                collectionId,
+                source: requestPayload.source,
+                model: requestPayload.model,
+                itemCount: requestPayload.items.length,
+                hasPrecomputedEmbeddings: !!requestPayload.embeddings,
+            });
+            console.log('[VectHare Debug] Provider params:', JSON.stringify(providerParams, null, 2));
+
             const response = await fetch('/api/vector/insert', {
                 method: 'POST',
                 headers: getRequestHeaders(),
-                body: JSON.stringify({
-                    collectionId: collectionId,
-                    items: items.map(item => {
-                        // Include keywords in the text for embedding/indexing
-                        let textWithKeywords = item.text || '';
-                        if (item.keywords && item.keywords.length > 0) {
-                            const keywordTexts = item.keywords.map(kw => kw.text || kw).join(' ');
-                            textWithKeywords += ` [KEYWORDS: ${keywordTexts}]`;
-                        }
-
-                        return {
-                            hash: item.hash,
-                            text: textWithKeywords,
-                            index: item.index ?? 0,
-                        };
-                    }),
-                    source: settings.source || 'transformers',
-                    model: model,
-                    // Pass embeddings if pre-computed (for webllm, koboldcpp, bananabread)
-                    embeddings: items[0]?.vector ? Object.fromEntries(items.map(i => {
-                        let textWithKeywords = i.text || '';
-                        if (i.keywords && i.keywords.length > 0) {
-                            const keywordTexts = i.keywords.map(kw => kw.text || kw).join(' ');
-                            textWithKeywords += ` [KEYWORDS: ${keywordTexts}]`;
-                        }
-                        return [textWithKeywords, i.vector];
-                    })) : undefined,
-                    ...providerParams,
-                }),
+                body: JSON.stringify(requestPayload),
             });
 
             if (!response.ok) {
                 const errorBody = await response.text().catch(() => 'No response body');
+                console.error('[VectHare Debug] Server error response:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    body: errorBody,
+                    requestPayload: {
+                        collectionId: requestPayload.collectionId,
+                        source: requestPayload.source,
+                        model: requestPayload.model,
+                        itemCount: requestPayload.items.length,
+                        providerParams: providerParams,
+                    }
+                });
                 throw new Error(`Failed to insert vectors: ${response.status} - ${errorBody}`);
             }
 
