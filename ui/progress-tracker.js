@@ -362,7 +362,7 @@ export class ProgressTracker {
             const progressPercent = (this.stats.embeddedChunks / this.stats.totalChunksToEmbed) * 100;
             if (progressPercent < 100) {
                 return 'Processing chunks...';
-            } else {
+9            } else {
                 return 'Finalizing...';
             }
         } else if (this.stats.processedItems >= this.stats.totalItems) {

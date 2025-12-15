@@ -530,9 +530,70 @@ export function renderSettings(containerId, settings, callbacks) {
                             </div>
 
                         </div>
-                    </div>
+                        </div>
 
-                    <!-- Chat Auto-Sync Card -->
+                        <!-- World Info Settings Card -->
+                        <div class="vecthare-card">
+                            <div class="vecthare-card-header">
+                                <h3 class="vecthare-card-title">
+                                    <span class="vecthare-icon">
+                                        <i class="fa-solid fa-globe"></i>
+                                    </span>
+                                    World Info settings
+                                </h3>
+                                <p class="vecthare-card-subtitle">Semantic activation of World Info entries from vectorized lorebooks</p>
+                            </div>
+                            <div class="vecthare-card-body">
+                                <label class="checkbox_label" for="vecthare_enabled_world_info" title="Enable semantic activation of World Info entries from vectorized lorebooks based on chat context similarity.">
+                                    <input id="vecthare_enabled_world_info" type="checkbox" class="checkbox">
+                                    <span>Enable Semantic WI Activation</span>
+                                </label>
+
+                                <div id="vecthare_world_info_settings" style="margin-top:10px; display:none;">
+                                    <small style="display:block; margin-bottom:8px; opacity:0.85;">
+                                        Activates World Info entries from <strong>vectorized lorebooks</strong> based on semantic similarity to recent chat messages. Complements keyword-based activation.
+                                    </small>
+
+                                    <div style="display:flex; gap:12px;">
+                                        <div style="flex:1;">
+                                            <label for="vecthare_world_info_threshold"><small>Score Threshold</small></label>
+                                            <input id="vecthare_world_info_threshold" type="number" class="vecthare-input" min="0" max="1" step="0.01" />
+                                        </div>
+                                        <div style="flex:1;">
+                                            <label for="vecthare_world_info_top_k"><small>Top-K per Lorebook</small></label>
+                                            <input id="vecthare_world_info_top_k" type="number" class="vecthare-input" min="1" max="20" />
+                                        </div>
+                                        <div style="flex:1;">
+                                            <label for="vecthare_world_info_query_depth"><small>Query Depth</small></label>
+                                            <input id="vecthare_world_info_query_depth" type="number" class="vecthare-input" min="1" max="10" />
+                                        </div>
+                                    </div>
+
+                                    <div style="margin-top:10px;">
+                                        <label for="vecthare_wi_test_input"><small>Test Messages (one per line)</small></label>
+                                        <textarea id="vecthare_wi_test_input" class="vecthare-textarea" rows="3" placeholder="Enter test messages, one per line..."></textarea>
+                                        <div style="display:flex; gap:8px; margin-top:8px;">
+                                            <button id="vecthare_wi_test_btn" class="vecthare-btn-secondary">Test Semantic WI</button>
+                                            <button id="vecthare_wi_dump_registry" class="vecthare-btn-secondary">Dump Registry</button>
+                                        </div>
+                                    </div>
+
+                                    <div style="margin-top:10px; display:flex; gap:12px; align-items:center;">
+                                        <label class="checkbox_label" for="vecthare_enabled_for_all">
+                                            <input id="vecthare_enabled_for_all" type="checkbox" />
+                                            <span>Enabled for all entries</span>
+                                        </label>
+                                        <div style="flex:1"></div>
+                                        <div style="width:160px;">
+                                            <label for="vecthare_max_entries"><small>Max Entries</small></label>
+                                            <input id="vecthare_max_entries" type="number" class="vecthare-input" min="1" max="9999" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chat Auto-Sync Card -->
                     <div class="vecthare-card">
                         <div class="vecthare-card-header">
                             <h3 class="vecthare-card-title">
@@ -1864,6 +1925,83 @@ function bindSettingsEvents(settings, callbacks) {
             Object.assign(extension_settings.vecthare, settings);
             saveSettingsDebounced();
         });
+
+    // World Info Integration settings
+    $('#vecthare_enabled_world_info')
+        .prop('checked', settings.enabled_world_info || false)
+        .on('change', function() {
+            const enabled = $(this).prop('checked');
+            settings.enabled_world_info = enabled;
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+            // Show/hide the detailed world info settings panel
+            $('#vecthare_world_info_settings').toggle(enabled);
+        });
+
+    $('#vecthare_world_info_threshold')
+        .val(settings.world_info_threshold ?? 0.3)
+        .on('input', function() {
+            const value = parseFloat($(this).val());
+            const safeValue = isNaN(value) ? 0.3 : Math.max(0, Math.min(1, value));
+            settings.world_info_threshold = safeValue;
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#vecthare_world_info_top_k')
+        .val(settings.world_info_top_k ?? 3)
+        .on('input', function() {
+            const value = parseInt($(this).val());
+            const safeValue = isNaN(value) ? 3 : Math.max(1, Math.min(20, value));
+            settings.world_info_top_k = safeValue;
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+        });
+
+    $('#vecthare_world_info_query_depth')
+        .val(settings.world_info_query_depth ?? 3)
+        .on('input', function() {
+            const value = parseInt($(this).val());
+            const safeValue = isNaN(value) ? 3 : Math.max(1, Math.min(10, value));
+            settings.world_info_query_depth = safeValue;
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+        });
+
+    // Initialize world info settings visibility based on current setting
+    $('#vecthare_world_info_settings').toggle(settings.enabled_world_info || false);
+
+    // Debug buttons: Test semantic WI and dump registry
+    $('#vecthare_wi_test_btn').on('click', async function() {
+        try {
+            const raw = $('#vecthare_wi_test_input').val() || '';
+            const recentMessages = raw.split('\n').map(s => s.trim()).filter(Boolean);
+            const activeEntries = [];
+            const cfg = window.extension_settings?.vecthare || settings;
+            if (!window.VectHare_WorldInfo || !window.VectHare_WorldInfo.getSemanticEntries) {
+                toastr.error('VectHare: WorldInfo hooks not initialized');
+                return;
+            }
+            console.log('VectHare: Running semantic WI test with messages:', recentMessages);
+            const entries = await window.VectHare_WorldInfo.getSemanticEntries(recentMessages, activeEntries, cfg);
+            console.log('VectHare: Semantic WI test results:', entries);
+            toastr.info(`Semantic WI test completed - ${entries.length} entries (see console)`);
+        } catch (e) {
+            console.error('VectHare: Semantic WI test failed', e);
+            toastr.error('Semantic WI test failed: ' + e.message);
+        }
+    });
+
+    $('#vecthare_wi_dump_registry').on('click', function() {
+        try {
+            const registry = window.extension_settings?.vecthare?.vecthare_collection_registry || settings.vecthare_collection_registry || [];
+            console.log('VectHare: Collection registry dump:', registry);
+            toastr.info(`Collection registry dumped to console (${registry.length} items)`);
+        } catch (e) {
+            console.error('VectHare: Failed to dump registry', e);
+            toastr.error('Failed to dump registry: ' + e.message);
+        }
+    });
 
     // Injection position (where chunks appear in prompt)
     $('#vecthare_injection_position')
