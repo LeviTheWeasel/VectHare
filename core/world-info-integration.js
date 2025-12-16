@@ -10,13 +10,14 @@
  * ============================================================================
  */
 
-import { extension_settings } from '../../../../extensions.js';
+import { extension_settings, getContext } from '../../../../extensions.js';
 import { queryCollection } from './core-vector-api.js';
-import { getCollectionMeta, isCollectionEnabled } from './collection-metadata.js';
+import { getCollectionMeta, isCollectionEnabled, shouldCollectionActivate } from './collection-metadata.js';
 import { parseRegistryKey } from './collection-ids.js';
 import { buildLorebookCollectionId } from './collection-ids.js';
-import { setExtensionPrompt } from '../../../../../script.js';
+import { setExtensionPrompt, getCurrentChatId } from '../../../../../script.js';
 import { EXTENSION_PROMPT_TAG } from './constants.js';
+import { buildSearchContext } from './conditional-activation.js';
 
 // ============================================================================
 // WORLD INFO ACTIVATION HOOKS
@@ -48,8 +49,24 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
     const threshold = settings.world_info_threshold || 0.3;
     const topK = settings.world_info_top_k || 3;
 
-    // Get all enabled lorebook collections (registry keys may be in backend:source:id format)
-    const lorebookCollections = getEnabledLorebookCollections(settings);
+    // Build search context for activation filter evaluation
+    const context = getContext();
+    const searchContext = buildSearchContext(
+        context.chat || [],
+        settings.query || 10,
+        recentMessages,
+        {
+            generationType: 'normal',
+            isGroupChat: context.groupId != null,
+            currentCharacter: context.name2 || null,
+            activeLorebookEntries: activeEntries.map(e => e.key || e.uid),
+            currentChatId: getCurrentChatId(),
+            currentCharacterId: context.characterId || null
+        }
+    );
+
+    // Get all enabled lorebook collections that pass activation filters
+    const lorebookCollections = await getEnabledLorebookCollections(settings, searchContext);
 
     for (const collection of lorebookCollections) {
         try {
@@ -101,11 +118,12 @@ export async function getSemanticWorldInfoEntries(recentMessages, activeEntries,
 }
 
 /**
- * Get all enabled lorebook collections
+ * Get all enabled lorebook collections that pass activation filters
  * @param {object} settings - VectHare settings
- * @returns {Array<{id: string, name: string}>}
+ * @param {object} searchContext - Search context for activation filter evaluation
+ * @returns {Promise<Array<{id: string, name: string}>>}
  */
-function getEnabledLorebookCollections(settings) {
+async function getEnabledLorebookCollections(settings, searchContext) {
     const collections = [];
     const collectionRegistry = settings.vecthare_collection_registry || [];
 
@@ -120,6 +138,13 @@ function getEnabledLorebookCollections(settings) {
             continue;
         }
 
+        // Check if collection passes activation filters
+        const passesActivation = await shouldCollectionActivate(collectionId, searchContext);
+        if (!passesActivation) {
+            console.log(`VectHare WI: Lorebook collection ${collectionId} did not pass activation filters, skipping`);
+            continue;
+        }
+
         // Get collection metadata
         const meta = getCollectionMeta(collectionId);
         const name = meta?.sourceName || collectionId;
@@ -127,6 +152,7 @@ function getEnabledLorebookCollections(settings) {
         collections.push({ id: collectionId, name });
     }
 
+    console.log(`VectHare WI: ${collections.length} lorebook collection(s) passed activation filters`);
     return collections;
 }
 
