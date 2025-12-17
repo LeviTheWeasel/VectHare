@@ -52,7 +52,7 @@ export const EXTRACTION_LEVELS = {
         description: 'Full text scan, max 15 keywords',
         enabled: true,
         headerSize: null, // null = full text
-        minFrequency: 2,
+        minFrequency: 1,
         maxKeywords: 15,
     },
 };
