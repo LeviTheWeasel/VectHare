@@ -440,7 +440,7 @@ export async function testTemporalDecay(settings) {
             return {
                 name: '[PROD] Temporal Decay',
                 status: 'fail',
-                message: 'Decay not reducing scores (check formula)',
+                message: `Decay not reducing scores (check formula). Settings: ${JSON.stringify(chatDecaySettings)}, Result: ${testScore} -> ${decayedScore}`,
                 category: 'production'
             };
         }
