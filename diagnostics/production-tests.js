@@ -981,9 +981,9 @@ export async function testReciprocalRankFusion(settings) {
         }
 
         // Verify all results have RRF scores
-        const hasScores = fusedResults.every(r => 
-            typeof r.rrfScore === 'number' && 
-            r.rrfScore > 0 && 
+        const hasScores = fusedResults.every(r =>
+            typeof r.rrfScore === 'number' &&
+            r.rrfScore > 0 &&
             r.rrfScore <= 1.0
         );
 
@@ -997,7 +997,7 @@ export async function testReciprocalRankFusion(settings) {
         }
 
         // Verify rank information is preserved
-        const hasRanks = fusedResults[0].ranks && 
+        const hasRanks = fusedResults[0].ranks &&
             (fusedResults[0].ranks.vector !== undefined || fusedResults[0].ranks.text !== undefined);
 
         if (!hasRanks) {
@@ -1059,9 +1059,9 @@ export async function testWeightedCombination(settings) {
         }
 
         // All results should have combined scores
-        const hasScores = fusedResults.every(r => 
-            typeof r.combinedScore === 'number' && 
-            r.combinedScore >= 0 && 
+        const hasScores = fusedResults.every(r =>
+            typeof r.combinedScore === 'number' &&
+            r.combinedScore >= 0 &&
             r.combinedScore <= 1.0
         );
 
@@ -1075,7 +1075,7 @@ export async function testWeightedCombination(settings) {
         }
 
         // Results should be sorted by combined score
-        const isSorted = fusedResults.every((r, i) => 
+        const isSorted = fusedResults.every((r, i) =>
             i === 0 || fusedResults[i-1].combinedScore >= r.combinedScore
         );
 
@@ -1133,9 +1133,9 @@ in claiming the legendary treasure that lay within the dragon's mountain fortres
         `.trim();
 
         // Test minimal extraction
-        const minimalKeywords = extractTextKeywords(testText, { 
-            level: 'minimal', 
-            baseWeight: 1.5 
+        const minimalKeywords = extractTextKeywords(testText, {
+            level: 'minimal',
+            baseWeight: 1.5
         });
 
         if (!Array.isArray(minimalKeywords)) {
@@ -1158,9 +1158,9 @@ in claiming the legendary treasure that lay within the dragon's mountain fortres
         }
 
         // Test balanced extraction
-        const balancedKeywords = extractTextKeywords(testText, { 
-            level: 'balanced', 
-            baseWeight: 1.5 
+        const balancedKeywords = extractTextKeywords(testText, {
+            level: 'balanced',
+            baseWeight: 1.5
         });
 
         // Balanced should extract more keywords (max 8)
@@ -1190,7 +1190,7 @@ in claiming the legendary treasure that lay within the dragon's mountain fortres
         }
 
         // "dragon" should be extracted (appears frequently in text)
-        const hasDragon = balancedKeywords.some(kw => 
+        const hasDragon = balancedKeywords.some(kw =>
             kw.text.toLowerCase().includes('dragon')
         );
 
@@ -1285,7 +1285,7 @@ export async function testKeywordBoosting(settings) {
 
         // Find the boosted document
         const doc1Boosted = boosted.find(r => r.hash === 'doc1');
-        
+
         if (!doc1Boosted) {
             return {
                 name: '[PROD] Keyword Boosting',
@@ -1440,7 +1440,7 @@ export async function testLorebookKeywordExtraction(settings) {
         // Test with empty entry
         const emptyEntry = { key: [], keysecondary: [] };
         const emptyKeywords = extractLorebookKeywords(emptyEntry);
-        
+
         if (emptyKeywords.length !== 0) {
             return {
                 name: '[PROD] Lorebook Keywords',
