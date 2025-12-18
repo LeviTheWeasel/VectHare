@@ -389,8 +389,16 @@ function normalizeScores(results, scoreField = 'score') {
  */
 function performBM25Search(results, query, options = {}) {
     if (!results || results.length === 0) return [];
+    if (!query || typeof query !== 'string') {
+        console.warn('[HybridSearch] Invalid query for BM25 search');
+        return results;
+    }
 
     const scorer = createBM25Scorer(results, options);
+    if (!scorer || scorer.totalDocs === 0) {
+        console.warn('[HybridSearch] Failed to create BM25 scorer or no documents indexed');
+        return results;
+    }
 
     // Get BM25 scores for all results
     const scoredResults = results.map((result, idx) => {

@@ -144,9 +144,14 @@ export class BM25Scorer {
      */
     scoreDocument(queryTokens, docIndex) {
         if (this.avgDocLength === 0) return 0; // Avoid division by zero
+        if (!queryTokens || queryTokens.length === 0) return 0;
+        if (docIndex < 0 || docIndex >= this.totalDocs) return 0;
 
         const docTF = this.documentTermFreqs[docIndex];
         const docLength = this.documentLengths[docIndex];
+        
+        // Critical null checks to prevent crash with empty/invalid data
+        if (!docTF || docLength === undefined || docLength === null) return 0;
 
         let score = 0;
 
@@ -253,7 +258,8 @@ export function createBM25Scorer(results, options = {}) {
  * @returns {Array} Re-ranked results with BM25 scores
  */
 export function applyBM25Scoring(results, query, options = {}) {
-    if (!results || results.length === 0) return results;
+    if (!results || results.length === 0) return [];
+    if (!query || typeof query !== 'string') return results;
 
     const {
         k1 = DEFAULT_K1,
@@ -269,7 +275,13 @@ export function applyBM25Scoring(results, query, options = {}) {
 
     // Score all results
     const queryTokens = tokenize(query);
-    const maxBM25Score = Math.max(...results.map((_, idx) => scorer.scoreDocument(queryTokens, idx)), 0.0001);
+    if (queryTokens.length === 0) {
+        console.warn('[BM25] Empty query after tokenization, returning original results');
+        return results;
+    }
+    
+    const bm25Scores = results.map((_, idx) => scorer.scoreDocument(queryTokens, idx));
+    const maxBM25Score = bm25Scores.length > 0 ? Math.max(...bm25Scores, 0.0001) : 0.0001;
 
     // Combine scores
     const scoredResults = results.map((result, idx) => {
