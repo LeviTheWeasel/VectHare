@@ -1,3 +1,5 @@
+import { porterStemmer } from './bm25-scorer.js';
+
 /**
  * ============================================================================
  * VECTHARE KEYWORD SYSTEM
@@ -89,6 +91,20 @@ const KEYWORD_STOP_WORDS = new Set([
     'who', 'whom', 'whose', 'whoever', 'whomever',
     'someone', 'anyone', 'everyone', 'nobody', 'somebody', 'anybody', 'everybody',
     'something', 'anything', 'everything', 'nothing',
+
+    // Contractions
+    "i'll", "i've", "i'd", "i'm",
+    "you'll", "you've", "you'd", "you're",
+    "he'll", "he'd", "he's",
+    "she'll", "she'd", "she's",
+    "it'll", "it'd", "it's",
+    "we'll", "we've", "we'd", "we're",
+    "they'll", "they've", "they'd", "they're",
+    "won't", "wouldn't", "can't", "couldn't", "shouldn't", "mustn't", "mightn't",
+    "doesn't", "don't", "didn't", "hasn't", "haven't", "hadn't",
+    "isn't", "aren't", "wasn't", "weren't",
+    "that's", "there's", "here's", "what's", "where's", "who's", "how's", "why's",
+    "let's", "ain't", "gonna", "wanna", "gotta",
 
     // Conjunctions
     'and', 'or', 'but', 'nor', 'so', 'yet', 'for', 'because', 'although', 'though',
@@ -222,12 +238,6 @@ const KEYWORD_STOP_WORDS = new Set([
     'sort', 'sorts', 'type', 'types', 'form', 'forms', 'example', 'examples',
     'like', 'back', 'even', 'still', 'well', 'just', 'only', 'over',
 
-    // Section headers / formatting (lorebook specific)
-    'note', 'notes', 'warning', 'important', 'section', 'chapter',
-    'biology', 'psychology', 'moves', 'worship', 'limitations',
-    'manifestation', 'sustenance', 'perception', 'responsibility', 'tolerance', 'authority',
-    'mythic', 'signature', 'foil',
-
     // RP/chat specific
     'character', 'characters', 'user', 'assistant', 'system', 'message', 'messages',
     'response', 'responses', 'reply', 'replies', 'chat', 'chats',
@@ -249,6 +259,7 @@ export function extractLorebookKeywords(entry) {
             if (k && typeof k === 'string' && k.trim()) {
                 const normalized = k.trim().toLowerCase();
                 // Filter out stop words - they're too common to be useful as keywords
+                // Don't stem: keys are often names/titles that should match exactly
                 if (!KEYWORD_STOP_WORDS.has(normalized) && normalized.length >= 2) {
                     keywords.push(normalized);
                 }
@@ -262,6 +273,7 @@ export function extractLorebookKeywords(entry) {
             if (k && typeof k === 'string' && k.trim()) {
                 const normalized = k.trim().toLowerCase();
                 // Filter out stop words
+                // Don't stem: keys are often names/titles that should match exactly
                 if (!KEYWORD_STOP_WORDS.has(normalized) && normalized.length >= 2) {
                     keywords.push(normalized);
                 }
@@ -299,11 +311,22 @@ export function extractTextKeywords(text, options = {}) {
     // Step 1: Clean text - remove example citations and italics
     let cleanedText = text.replace(/\([^)]+\)/g, ' '); // Remove (parenthetical citations)
     cleanedText = cleanedText.replace(/\*[^*]+\*/g, ' '); // Remove *italicized examples*
+    // Strip possessive 's before tokenization (e.g., "Strovolos's" → "Strovolos")
+    cleanedText = cleanedText.replace(/'s\b/g, '');
 
     // Step 2: Determine scan area based on level
     const scanArea = config.headerSize
         ? cleanedText.substring(0, config.headerSize)
         : cleanedText;
+
+    // Step 2.5: Detect capitalized words (likely proper nouns/names) before lowercasing
+    // Match words that are capitalized mid-sentence or in titles
+    const properNouns = new Set();
+    const capitalizedPattern = /\b[A-Z][a-z]{3,}\b/g;
+    let match;
+    while ((match = capitalizedPattern.exec(scanArea)) !== null) {
+        properNouns.add(match[0].toLowerCase());
+    }
 
     // Step 3: Extract and count words
     const topicWords = scanArea.toLowerCase().match(/\b[a-z]{4,}\b/g) || [];
@@ -311,7 +334,9 @@ export function extractTextKeywords(text, options = {}) {
 
     for (const word of topicWords) {
         if (KEYWORD_STOP_WORDS.has(word)) continue;
-        wordCounts.set(word, (wordCounts.get(word) || 0) + 1);
+        // Don't stem proper nouns/names - they should match exactly
+        const stemmed = properNouns.has(word) ? word : porterStemmer(word);
+        wordCounts.set(stemmed, (wordCounts.get(stemmed) || 0) + 1);
     }
 
     // Step 4: Filter by minimum frequency and build weighted keywords
@@ -403,6 +428,7 @@ export function extractChatKeywords(text, options = {}) {
         // Skip common words that happen to be capitalized
         if (KEYWORD_STOP_WORDS.has(word)) continue;
 
+        // Don't stem proper nouns - preserve names/titles exactly
         // Skip if already seen
         if (seen.has(word)) continue;
         seen.add(word);
@@ -469,6 +495,17 @@ export function extractBM25Keywords(text, options = {}) {
         }
     }
 
+    // Strip possessive 's before tokenization
+    scanText = scanText.replace(/'s\b/g, '');
+
+    // Detect capitalized words (proper nouns/names) before lowercasing
+    const properNouns = new Set();
+    const capitalizedPattern = /\b[A-Z][a-z]{3,}\b/g;
+    let match;
+    while ((match = capitalizedPattern.exec(scanText)) !== null) {
+        properNouns.add(match[0].toLowerCase());
+    }
+
     // Split into sentences (mini-corpus for IDF calculation)
     const sentences = scanText
         .split(/[.!?\n]+/)
@@ -486,7 +523,12 @@ export function extractBM25Keywords(text, options = {}) {
             .toLowerCase()
             .replace(/[^\w\s'-]/g, ' ')
             .split(/\s+/)
-            .filter(t => t.length >= minWordLength && !KEYWORD_STOP_WORDS.has(t));
+            .filter(t => t.length >= minWordLength && !KEYWORD_STOP_WORDS.has(t))
+            .map(t => {
+                // Don't stem proper nouns (names) - preserve them exactly
+                if (properNouns.has(t)) return t;
+                return t.length > 3 ? porterStemmer(t) : t;
+            });
     };
 
     const sentenceTokens = sentences.map(tokenizeSentence);
@@ -619,6 +661,17 @@ export function extractSmartKeywords(text, options = {}) {
         }
     }
 
+    // Strip possessive 's before tokenization
+    scanText = scanText.replace(/'s\b/g, '');
+
+    // Detect capitalized words (proper nouns/names) before lowercasing
+    const properNouns = new Set();
+    const capitalizedPattern = /\b[A-Z][a-z]{3,}\b/g;
+    let match;
+    while ((match = capitalizedPattern.exec(scanText)) !== null) {
+        properNouns.add(match[0].toLowerCase());
+    }
+
     const keywordCandidates = new Map(); // word -> { score, type, position }
 
     // ---------------------------
@@ -632,6 +685,7 @@ export function extractSmartKeywords(text, options = {}) {
         while ((match = properNounRegex.exec(text)) !== null) {
             const entity = match[1].toLowerCase();
             if (!KEYWORD_STOP_WORDS.has(entity) && entity.length >= 3) {
+                // Don't stem entities (names/titles) - preserve exactly
                 const position = getPositionWeight(match.index, text.length, positionWeighting);
                 const existing = keywordCandidates.get(entity);
                 if (!existing || existing.score < ENTITY_BOOST * position) {
@@ -651,6 +705,7 @@ export function extractSmartKeywords(text, options = {}) {
             const acronym = match[1].toLowerCase();
             // Skip common false positives
             if (['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all'].includes(acronym)) continue;
+            // Don't stem acronyms - they should match exactly
             const position = getPositionWeight(match.index, text.length, positionWeighting);
             const existing = keywordCandidates.get(acronym);
             if (!existing || existing.score < ENTITY_BOOST * position * 1.2) {
@@ -674,7 +729,12 @@ export function extractSmartKeywords(text, options = {}) {
         return s.toLowerCase()
             .replace(/[^\w\s'-]/g, ' ')
             .split(/\s+/)
-            .filter(t => t.length >= 3 && !KEYWORD_STOP_WORDS.has(t));
+            .filter(t => t.length >= 3 && !KEYWORD_STOP_WORDS.has(t))
+            .map(t => {
+                // Don't stem proper nouns (names) - preserve them exactly
+                if (properNouns.has(t)) return t;
+                return t.length > 3 ? porterStemmer(t) : t;
+            });
     };
 
     const sentenceTokens = sentences.map(tokenizeSentence);
