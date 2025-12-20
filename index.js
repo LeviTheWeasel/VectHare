@@ -7,7 +7,7 @@
  * All chunk operations go through unified /chunks/* endpoints.
  * Backend is specified via `backend` parameter in request body.
  *
- * @version 3.1.0
+ * @version 3.2.0
  */
 
 import path from 'node:path';
@@ -20,7 +20,7 @@ import qdrantBackend from './qdrant-backend.js';
 import milvusBackend from './milvus-backend.js';
 
 const pluginName = 'similharity';
-const pluginVersion = '3.1.0';
+const pluginVersion = '3.2.0';
 
 /**
  * Initialize the plugin
