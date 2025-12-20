@@ -116,10 +116,10 @@ const Hamming = {
    *
    * @param {Array<number>} vecA - First vector
    * @param {Array<number>} vecB - Second vector
-   * @param {number} tolerance - Tolerance for floating point comparison (default: 1e-10)
+   * @param {number} tolerance - Tolerance for floating point comparison (default: 1e-9)
    * @returns {number} Hamming distance (count of differences)
    */
-  distance(vecA, vecB, tolerance = 1e-10) {
+  distance(vecA, vecB, tolerance = 1e-9) {
     if (vecA.length !== vecB.length) {
       throw new Error('Vectors must have equal length');
     }
@@ -140,10 +140,10 @@ const Hamming = {
    *
    * @param {Array<number>} vecA - First vector
    * @param {Array<number>} vecB - Second vector
-   * @param {number} tolerance - Tolerance for floating point comparison (default: 1e-10)
+   * @param {number} tolerance - Tolerance for floating point comparison (default: 1e-9)
    * @returns {number} Normalized Hamming distance (0 to 1)
    */
-  normalizedDistance(vecA, vecB, tolerance = 1e-10) {
+  normalizedDistance(vecA, vecB, tolerance = 1e-9) {
     if (vecA.length === 0) return 0;
     return this.distance(vecA, vecB, tolerance) / vecA.length;
   },
@@ -154,10 +154,10 @@ const Hamming = {
    * @param {Array<Array<number>>} matrixA - First matrix (array of vectors)
    * @param {Array<Array<number>>} matrixB - Second matrix (array of vectors)
    * @param {boolean} normalized - Whether to normalize distances (default: false)
-   * @param {number} tolerance - Tolerance for floating point comparison (default: 1e-10)
+   * @param {number} tolerance - Tolerance for floating point comparison (default: 1e-9)
    * @returns {Array<Array<number>>} Distance matrix
    */
-  pairwiseDistance(matrixA, matrixB, normalized = false, tolerance = 1e-10) {
+  pairwiseDistance(matrixA, matrixB, normalized = false, tolerance = 1e-9) {
     const result = [];
     const distFunc = normalized ? this.normalizedDistance : this.distance;
 
@@ -179,10 +179,10 @@ const Hamming = {
    * @param {Array<Array<number>>} vectors - Array of vectors to search
    * @param {number} k - Number of nearest neighbors
    * @param {boolean} normalized - Whether to normalize distances (default: false)
-   * @param {number} tolerance - Tolerance for floating point comparison (default: 1e-10)
+   * @param {number} tolerance - Tolerance for floating point comparison (default: 1e-9)
    * @returns {Array<{index: number, distance: number}>} K nearest neighbors
    */
-  kNearest(query, vectors, k, normalized = false, tolerance = 1e-10) {
+  kNearest(query, vectors, k, normalized = false, tolerance = 1e-9) {
     const distFunc = normalized ? this.normalizedDistance : this.distance;
 
     const distances = vectors.map((vec, idx) => ({
