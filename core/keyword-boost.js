@@ -256,11 +256,12 @@ function getCombinedStopwords(settings = null) {
     // Add custom stopwords if settings provided
     if (settings && settings.custom_stopwords && typeof settings.custom_stopwords === 'string') {
         // Process ST macros ({{char}}, {{user}}, etc.) before splitting
-        const processedString = substituteParams(settings.custom_stopwords);
+        let processedString = substituteParams(settings.custom_stopwords);
         processedString = processedString.toLowerCase();
+        
         const customWords = processedString
             .split(',')
-            .map(w => w.trim().toLowerCase())
+            .map(w => w.trim())
             .filter(w => w.length > 0);
 
         for (const word of customWords) {
