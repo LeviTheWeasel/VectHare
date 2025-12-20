@@ -7,7 +7,7 @@
  * - Comprehensive stop word filtering (190+ words)
  * - Sublinear term frequency: log(1 + tf)
  * - Coverage bonus: +10% when all query terms match
- * - Field boosting: Title (3x), Tags (2x), Content (1x)
+ * - Field boosting: Title (4x), Tags (4x), Content (1x)
  * - BM25+ IDF formula with delta smoothing
  *
  * Based on research showing BM25+ outperforms standard BM25 for long documents.
@@ -93,6 +93,7 @@ function porterStemmer(word) {
     }
 
     let stem = word.toLowerCase();
+    let preserveE = false; // Track if we added 'e' via suffix rules
 
     // Step 1a: Remove plurals
     if (stem.endsWith('sses')) {
@@ -109,7 +110,13 @@ function porterStemmer(word) {
     const hasVowel = (s) => /[aeiou]/.test(s);
 
     if (stem.endsWith('eed')) {
-        if (stem.length > 4) stem = stem.slice(0, -1);
+        // Rule: EED → EE (simplified for better stemming)
+        // Apply if there's any base remaining after removing 'eed'
+        const base = stem.slice(0, -3); // Remove 'eed'
+        if (base.length > 0) {
+            stem = base + 'ee'; // agreed → agree, freed → free
+            preserveE = true; // Preserve the double 'e'
+        }
     } else if (stem.endsWith('ed')) {
         const base = stem.slice(0, -2);
         if (hasVowel(base)) {
@@ -117,6 +124,7 @@ function porterStemmer(word) {
             // Handle double consonants
             if (stem.endsWith('at') || stem.endsWith('bl') || stem.endsWith('iz')) {
                 stem += 'e';
+                preserveE = true;
             } else if (/([^aeiouslz])\1$/.test(stem)) {
                 stem = stem.slice(0, -1);
             }
@@ -127,6 +135,7 @@ function porterStemmer(word) {
             stem = base;
             if (stem.endsWith('at') || stem.endsWith('bl') || stem.endsWith('iz')) {
                 stem += 'e';
+                preserveE = true;
             } else if (/([^aeiouslz])\1$/.test(stem)) {
                 stem = stem.slice(0, -1);
             }
@@ -145,6 +154,7 @@ function porterStemmer(word) {
     for (const [suffix, replacement] of step2Mappings) {
         if (stem.endsWith(suffix) && stem.length > suffix.length + 2) {
             stem = stem.slice(0, -suffix.length) + replacement;
+            if (replacement.endsWith('e')) preserveE = true;
             break;
         }
     }
@@ -163,10 +173,14 @@ function porterStemmer(word) {
     }
 
     // Step 4: Remove final 'e' in certain cases
-    if (stem.endsWith('e') && stem.length > 3) {
+    // Skip if 'e' was intentionally added by suffix replacement rules
+    if (stem.endsWith('e') && stem.length > 3 && !preserveE) {
         const base = stem.slice(0, -1);
-        // Keep 'e' if removing would leave CVC pattern with final consonant not w,x,y
-        if (!(/[^aeiou][aeiou][^aeiouxwy]$/.test(base))) {
+        // Count vowel-consonant sequences (m)
+        const vcCount = (base.match(/[aeiou]+[^aeiou]+/g) || []).length;
+        // Remove 'e' only if m > 1, OR if m = 1 and it doesn't end with CVC pattern
+        const isCVC = /[^aeiou][aeiou][^aeiouxwy]$/.test(base);
+        if (vcCount > 1 || (vcCount === 1 && !isCVC)) {
             stem = base;
         }
     }
@@ -292,7 +306,7 @@ function calculateIDF(documentTermFreqs, totalDocs, delta = DEFAULT_DELTA) {
  * Enhancements over standard BM25:
  * - Sublinear TF: log(1 + tf) prevents frequent terms from dominating
  * - Coverage bonus: +10% when all query terms match
- * - Field boosting: Title (3x), Tags (2x), Content (1x)
+ * - Field boosting: Title (4x), Tags (4x), Content (1x)
  * - BM25+ IDF with delta smoothing
  */
 export class BM25Scorer {
@@ -336,20 +350,23 @@ export class BM25Scorer {
         let totalLength = 0;
         for (const doc of documents) {
             let allTokens = [];
+            let contentLength = 0; // Track only content tokens for length normalization
 
             // Field boosting: duplicate title/tag tokens for higher weight
+            // Note: Boosted tokens count for TF but NOT for document length
+            // This prevents length normalization from penalizing field-boosted docs
             if (this.fieldBoosting) {
-                // Title tokens (3x weight)
+                // Title tokens (4x weight)
                 if (doc.title) {
                     const titleTokens = tokenize(doc.title);
-                    for (let i = 0; i < 3; i++) {
+                    for (let i = 0; i < 4; i++) {
                         allTokens.push(...titleTokens);
                     }
                 }
-                // Tag tokens (2x weight)
+                // Tag tokens (4x weight) - high weight since tags are curated keywords
                 if (doc.tags && Array.isArray(doc.tags)) {
                     const tagTokens = doc.tags.flatMap(tag => tokenize(tag));
-                    for (let i = 0; i < 2; i++) {
+                    for (let i = 0; i < 4; i++) {
                         allTokens.push(...tagTokens);
                     }
                 }
@@ -358,12 +375,14 @@ export class BM25Scorer {
             // Content tokens (1x weight)
             const contentTokens = tokenize(doc.text);
             allTokens.push(...contentTokens);
+            contentLength = contentTokens.length;
 
             const tf = calculateTermFrequency(allTokens);
 
             this.documentTermFreqs.push(tf);
-            this.documentLengths.push(allTokens.length);
-            totalLength += allTokens.length;
+            // Use content length for normalization, not total tokens
+            this.documentLengths.push(contentLength);
+            totalLength += contentLength;
         }
 
         // Calculate average document length

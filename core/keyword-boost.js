@@ -258,7 +258,7 @@ function getCombinedStopwords(settings = null) {
         // Process ST macros ({{char}}, {{user}}, etc.) before splitting
         let processedString = substituteParams(settings.custom_stopwords);
         processedString = processedString.toLowerCase();
-        
+
         const customWords = processedString
             .split(',')
             .map(w => w.trim())
