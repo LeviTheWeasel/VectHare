@@ -64,6 +64,9 @@ const defaultSettings = {
     use_alt_endpoint: false,
     rate_limit_calls: 5,
     rate_limit_interval: 60, // seconds
+
+    // VEC-6: Batch insert optimization
+    insert_batch_size: 50, // Chunks per insert batch (50-100 recommended)
     togetherai_model: 'togethercomputer/m2-bert-80M-32k-retrieval',
     openai_model: 'text-embedding-ada-002',
     electronhub_model: 'text-embedding-3-small',

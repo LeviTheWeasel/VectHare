@@ -387,6 +387,12 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small class="vecthare_hint">Limit the number of API requests per time interval</small>
                             </div>
 
+                            <label for="vecthare_insert_batch_size">
+                                <small>Insert Batch Size: <span id="vecthare_insert_batch_size_value">50</span></small>
+                            </label>
+                            <input type="range" id="vecthare_insert_batch_size" class="vecthare-slider" min="10" max="100" step="10" />
+                            <small class="vecthare_hint">Chunks per insert batch (50-100 recommended for faster bulk operations)</small>
+
                             <label for="vecthare_score_threshold">
                                 <small>Similarity Threshold: <span id="vecthare_threshold_value">0.25</span></small>
                             </label>
@@ -2618,6 +2624,18 @@ function bindSettingsEvents(settings, callbacks) {
             Object.assign(extension_settings.vecthare, settings);
             saveSettingsDebounced();
         });
+
+    // VEC-6: Insert Batch Size
+    $('#vecthare_insert_batch_size')
+        .val(settings.insert_batch_size || 50)
+        .on('input', function() {
+            const value = parseInt($(this).val());
+            $('#vecthare_insert_batch_size_value').text(value);
+            settings.insert_batch_size = value;
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+        });
+    $('#vecthare_insert_batch_size_value').text(settings.insert_batch_size || 50);
 
     // Action buttons
     $('#vecthare_vectorize_content').on('click', () => {

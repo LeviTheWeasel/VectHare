@@ -630,35 +630,34 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
         await streamEmbeddingsAndWrite(backend, collectionId, items, textStrings, settings, onProgress);
     } else {
         // Server-side embeddings - backend handles everything
-        // If rate limiting is enabled, batch execution
-        if (settings.rate_limit_calls > 0) {
-            // Batch size depends on provider - some need smaller batches
-            // Ollama and Transformers work best with batch size of 1 (like Stock ST)
-            const smallBatchProviders = ['transformers', 'ollama'];
-            const BATCH_SIZE = smallBatchProviders.includes(settings.source) ? 1 : 10;
-            const batches = chunkArray(items, BATCH_SIZE);
+        // VEC-6: Use configurable batch size for optimized bulk inserts
+        // Some providers need smaller batches - Ollama and Transformers work best with batch size of 1
+        const smallBatchProviders = ['transformers', 'ollama'];
+        const configuredBatchSize = settings.insert_batch_size || 50;
+        const BATCH_SIZE = smallBatchProviders.includes(settings.source) ? 1 : configuredBatchSize;
+        const batches = chunkArray(items, BATCH_SIZE);
 
-            console.log(`VectHare: Processing ${items.length} items in ${batches.length} batches with rate limit (Max ${settings.rate_limit_calls} calls / ${settings.rate_limit_interval}s)`);
+        const hasRateLimit = settings.rate_limit_calls > 0;
+        console.log(`VectHare: Processing ${items.length} items in ${batches.length} batch(es) of up to ${BATCH_SIZE}${hasRateLimit ? ` with rate limit (Max ${settings.rate_limit_calls} calls / ${settings.rate_limit_interval}s)` : ''}`);
 
-            for (let i = 0; i < batches.length; i++) {
-                await dynamicRateLimiter.execute(async () => {
-                    await AsyncUtils.retry(async () => {
-                        await backend.insertVectorItems(collectionId, batches[i], settings);
-                    }, RETRY_CONFIG);
-                }, settings);
+        for (let i = 0; i < batches.length; i++) {
+            const processBatch = async () => {
+                await AsyncUtils.retry(async () => {
+                    await backend.insertVectorItems(collectionId, batches[i], settings);
+                }, RETRY_CONFIG);
+            };
 
-                if (onProgress) {
-                    const embeddedCount = (i + 1) * BATCH_SIZE;
-                    const actualEmbedded = Math.min(embeddedCount, items.length);
-                    onProgress(actualEmbedded, items.length);
-                }
+            // Apply rate limiting if configured, otherwise execute directly
+            if (hasRateLimit) {
+                await dynamicRateLimiter.execute(processBatch, settings);
+            } else {
+                await processBatch();
             }
-        } else {
-            // No rate limit - execute all at once (backend handles it)
-            await backend.insertVectorItems(collectionId, items, settings);
 
             if (onProgress) {
-                onProgress(items.length, items.length);
+                const embeddedCount = (i + 1) * BATCH_SIZE;
+                const actualEmbedded = Math.min(embeddedCount, items.length);
+                onProgress(actualEmbedded, items.length);
             }
         }
     }
@@ -674,23 +673,34 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
  * @param {Function} onProgress - Progress callback
  */
 async function streamEmbeddingsAndWrite(backend, collectionId, items, textStrings, settings, onProgress) {
-    const EMBEDDING_BATCH_SIZE = 10; // Batch size for embedding generation
-    const embeddingsMap = /** @type {Record<string, number[]>} */ ({});
+    // VEC-6: Use configurable batch size for optimized bulk inserts
+    const EMBEDDING_BATCH_SIZE = settings.insert_batch_size || 50;
     let totalProcessed = 0;
+    const totalBatches = Math.ceil(textStrings.length / EMBEDDING_BATCH_SIZE);
+
+    console.log(`VectHare: Streaming ${items.length} items in ${totalBatches} batch(es) of up to ${EMBEDDING_BATCH_SIZE}`);
 
     // Process embeddings in batches
     for (let i = 0; i < textStrings.length; i += EMBEDDING_BATCH_SIZE) {
         const batchEnd = Math.min(i + EMBEDDING_BATCH_SIZE, textStrings.length);
         const batchTextStrings = textStrings.slice(i, batchEnd);
         const batchItems = items.slice(i, batchEnd);
+        const batchNum = Math.floor(i / EMBEDDING_BATCH_SIZE) + 1;
 
-        console.log(`VectHare: Embedding batch ${Math.floor(i / EMBEDDING_BATCH_SIZE) + 1}/${Math.ceil(textStrings.length / EMBEDDING_BATCH_SIZE)} (items ${i + 1}-${batchEnd})`);
+        console.log(`VectHare: Embedding batch ${batchNum}/${totalBatches} (items ${i + 1}-${batchEnd})`);
 
-        // Generate embeddings for this batch
-        const additionalArgs = await getAdditionalArgs(batchTextStrings, settings);
+        // VEC-6: Retry logic per batch instead of per chunk
+        let additionalArgs;
+        try {
+            additionalArgs = await AsyncUtils.retry(async () => {
+                return await getAdditionalArgs(batchTextStrings, settings);
+            }, RETRY_CONFIG);
+        } catch (error) {
+            throw new Error(`VectHare: Failed to generate embeddings for batch ${batchNum} after retries: ${error.message}`);
+        }
 
         if (!additionalArgs.embeddings) {
-            throw new Error(`VectHare: No embeddings returned from ${settings.source} for batch ${i / EMBEDDING_BATCH_SIZE + 1}`);
+            throw new Error(`VectHare: No embeddings returned from ${settings.source} for batch ${batchNum}`);
         }
 
         // Attach embeddings to items and validate
@@ -721,9 +731,15 @@ async function streamEmbeddingsAndWrite(backend, collectionId, items, textString
             throw new Error(`VectHare: Failed to generate embeddings for ${settings.source} - ${missingEmbeddings} items missing in batch`);
         }
 
-        // Write this batch to database immediately
-        console.log(`VectHare: Writing batch ${Math.floor(i / EMBEDDING_BATCH_SIZE) + 1} to database (${itemsToWrite.length} items)`);
-        await backend.insertVectorItems(collectionId, itemsToWrite, settings);
+        // VEC-6: Write batch to database with retry logic
+        console.log(`VectHare: Writing batch ${batchNum} to database (${itemsToWrite.length} items)`);
+        try {
+            await AsyncUtils.retry(async () => {
+                await backend.insertVectorItems(collectionId, itemsToWrite, settings);
+            }, RETRY_CONFIG);
+        } catch (error) {
+            throw new Error(`VectHare: Failed to write batch ${batchNum} to database after retries: ${error.message}`);
+        }
 
         totalProcessed += itemsToWrite.length;
 
