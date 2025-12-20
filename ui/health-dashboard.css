@@ -1,0 +1,181 @@
+/**
+ * VEC-18: Backend Health Dashboard Styles
+ */
+
+/* Health Indicator */
+.vecthare-health-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    background: transparent;
+    padding: 0;
+    margin-left: 8px;
+}
+
+.vecthare-health-indicator:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.vecthare-health-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    transition: background-color 0.3s;
+}
+
+.vecthare-health-ok .vecthare-health-dot {
+    background-color: #4caf50;
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.5);
+}
+
+.vecthare-health-warning .vecthare-health-dot {
+    background-color: #ff9800;
+    box-shadow: 0 0 6px rgba(255, 152, 0, 0.5);
+}
+
+.vecthare-health-error .vecthare-health-dot {
+    background-color: #f44336;
+    box-shadow: 0 0 6px rgba(244, 67, 54, 0.5);
+}
+
+/* Health Dashboard Modal */
+.vecthare-health-modal {
+    max-width: 500px;
+}
+
+.vecthare-health-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vecthare-health-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+}
+
+.vecthare-health-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.vecthare-health-status.vecthare-health-ok {
+    color: #4caf50;
+}
+
+.vecthare-health-status.vecthare-health-warning {
+    color: #ff9800;
+}
+
+.vecthare-health-status.vecthare-health-error {
+    color: #f44336;
+}
+
+.vecthare-health-icon {
+    font-size: 1.2em;
+}
+
+.vecthare-health-section {
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+}
+
+.vecthare-health-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.9em;
+    opacity: 0.8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.vecthare-health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 12px;
+}
+
+.vecthare-health-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+}
+
+.vecthare-stat-value {
+    font-size: 1.4em;
+    font-weight: 600;
+}
+
+.vecthare-stat-label {
+    font-size: 0.75em;
+    opacity: 0.7;
+    text-transform: uppercase;
+}
+
+.vecthare-stat-error .vecthare-stat-value {
+    color: #f44336;
+}
+
+.vecthare-health-error-section {
+    border-left: 3px solid #f44336;
+}
+
+.vecthare-health-error-box {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: rgba(244, 67, 54, 0.1);
+    border-radius: 4px;
+}
+
+.vecthare-error-time {
+    font-size: 0.8em;
+    opacity: 0.7;
+}
+
+.vecthare-error-message {
+    font-size: 0.9em;
+    color: #f44336;
+    word-break: break-word;
+}
+
+.vecthare-active-backends {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.vecthare-backend-badge {
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    font-size: 0.85em;
+}
+
+.vecthare-modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.vecthare-modal-footer small {
+    opacity: 0.6;
+}

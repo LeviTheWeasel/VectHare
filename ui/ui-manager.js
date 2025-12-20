@@ -20,6 +20,7 @@ import { openContentVectorizer } from './content-vectorizer.js';
 import { openSearchDebugModal, getLastSearchDebug } from './search-debug.js';
 import { openTextCleaningManager } from './text-cleaning-manager.js';
 import { resetBackendHealth } from '../backends/backend-manager.js';
+import { getHealthIndicatorHtml, getHealthModalHtml, initializeHealthDashboard } from './health-dashboard.js';
 import { getChatCollectionId } from '../core/chat-vectorization.js';
 import { doesChatHaveVectors } from '../core/collection-loader.js';
 import { getModelField } from '../core/providers.js';
@@ -744,6 +745,7 @@ export function renderSettings(containerId, settings, callbacks) {
                                     <i class="fa-solid fa-broom"></i>
                                     <span>Text Cleaning</span>
                                 </button>
+                                ${getHealthIndicatorHtml()}
                             </div>
 
                             <label class="checkbox_label" for="vecthare_include_production_tests" style="margin-top: 20px;">
@@ -889,6 +891,8 @@ export function renderSettings(containerId, settings, callbacks) {
                 </div>
             </div>
         </div>
+
+        ${getHealthModalHtml()}
     `;
 
     // Sanity debug: confirm the generated HTML contains the lock button marker
@@ -929,6 +933,9 @@ export function renderSettings(containerId, settings, callbacks) {
 
     // Initialize modal
     initializeDiagnosticsModal();
+
+    // Initialize health dashboard
+    initializeHealthDashboard();
 
     console.log('VectHare UI: Settings rendered');
 }
