@@ -6,7 +6,7 @@
  * collapsible cards showing title, summary, and preview.
  *
  * @author Coneja Chibi
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 

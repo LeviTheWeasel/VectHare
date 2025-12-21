@@ -5,7 +5,7 @@
  * Data access layer for managing vector collections and chunks
  *
  * @author Coneja Chibi
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 

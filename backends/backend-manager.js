@@ -6,7 +6,7 @@
  * Keeps the abstraction layer clean and focused.
  *
  * @author VectHare
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 

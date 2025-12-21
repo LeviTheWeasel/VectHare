@@ -6,7 +6,7 @@
  * Main entry point for browsing, managing, and editing all vector collections
  *
  * @author Coneja Chibi
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 
