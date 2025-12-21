@@ -6,7 +6,7 @@
  * Keeps backends small, focused, and swappable.
  *
  * @author VectHare
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 
@@ -138,7 +138,7 @@ export class VectorBackend {
      * @param {object} hybridOptions - Hybrid search options
      * @param {number} hybridOptions.vectorWeight - Weight for vector scores (0-1)
      * @param {number} hybridOptions.textWeight - Weight for text scores (0-1)
-     * @param {string} hybridOptions.fusionType - Fusion method ('rrf' or 'weighted')
+     * @param {string} hybridOptions.fusionMethod - Fusion method ('rrf' or 'weighted')
      * @param {number} hybridOptions.rrfK - RRF constant (default 60)
      * @returns {Promise<{hashes: number[], metadata: object[]}>}
      */
