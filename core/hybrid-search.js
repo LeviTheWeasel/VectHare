@@ -47,7 +47,7 @@ export async function hybridSearch(collectionId, searchText, topK, settings, opt
             return await backend.hybridQuery(collectionId, searchText, topK, settings, {
                 vectorWeight,
                 textWeight,
-                fusionType: fusionMethod,
+                fusionMethod,
                 rrfK
             });
         } catch (error) {

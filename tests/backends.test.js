@@ -762,7 +762,7 @@ describe('QdrantBackend', () => {
             const result = await backend.hybridQuery('test-collection', 'search', 5, defaultSettings, {
                 vectorWeight: 0.7,
                 textWeight: 0.3,
-                fusionType: 'rrf',
+                fusionMethod: 'rrf',
             });
 
             expect(fetchMock).toHaveBeenCalledWith(

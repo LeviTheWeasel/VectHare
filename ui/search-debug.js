@@ -475,17 +475,36 @@ function renderStageChunks(chunks, stageName, data) {
         const isHybrid = chunk.hybridSearch || (chunk.vectorScore !== undefined && chunk.textScore !== undefined);
         let scoreDisplay;
         if (isHybrid) {
-            const finalPct = ((chunk.score || 0) * 100).toFixed(1);
-            const vectorPct = ((chunk.vectorScore || 0) * 100).toFixed(0);
-            const textPct = ((chunk.textScore || 0) * 100).toFixed(0);
-            scoreDisplay = `
-                <span class="vecthare-debug-chunk-score-hybrid">
-                    <span class="vecthare-score-main ${scoreClass}">${finalPct}%</span>
-                    <span class="vecthare-score-mini">
-                        <span class="vecthare-mini-vector" title="Semantic similarity">🔷${vectorPct}%</span>
-                        <span class="vecthare-mini-text" title="Keyword match">📝${textPct}%</span>
-                    </span>
-                </span>`;
+            const isRRF = chunk.fusionMethod === 'rrf';
+
+            // RRF scores are small (0.014), but original vector/text scores are still percentages
+            if (isRRF) {
+                // Final RRF score is raw decimal, but vector/text are still percentages
+                const finalScore = (chunk.score || 0).toFixed(4);
+                const vectorPct = ((chunk.vectorScore || 0) * 100).toFixed(0);
+                const textPct = ((chunk.textScore || 0) * 100).toFixed(0);
+                scoreDisplay = `
+                    <span class="vecthare-debug-chunk-score-hybrid">
+                        <span class="vecthare-score-main ${scoreClass}">${finalScore}</span>
+                        <span class="vecthare-score-mini">
+                            <span class="vecthare-mini-vector" title="Semantic similarity (Qdrant cosine)">🔷${vectorPct}%</span>
+                            <span class="vecthare-mini-text" title="Keyword match score">📝${textPct}%</span>
+                        </span>
+                    </span>`;
+            } else {
+                // Show as percentages for weighted fusion
+                const finalPct = ((chunk.score || 0) * 100).toFixed(1);
+                const vectorPct = ((chunk.vectorScore || 0) * 100).toFixed(0);
+                const textPct = ((chunk.textScore || 0) * 100).toFixed(0);
+                scoreDisplay = `
+                    <span class="vecthare-debug-chunk-score-hybrid">
+                        <span class="vecthare-score-main ${scoreClass}">${finalPct}%</span>
+                        <span class="vecthare-score-mini">
+                            <span class="vecthare-mini-vector" title="Semantic similarity">🔷${vectorPct}%</span>
+                            <span class="vecthare-mini-text" title="Keyword match">📝${textPct}%</span>
+                        </span>
+                    </span>`;
+            }
         } else {
             scoreDisplay = `<span class="vecthare-debug-chunk-score ${scoreClass}">${chunk.score?.toFixed(3) || 'N/A'}</span>`;
         }
@@ -553,6 +572,26 @@ function renderStageChunks(chunks, stageName, data) {
                             <div class="vecthare-debug-meta-item">
                                 <span class="meta-label">Matched Query Keywords</span>
                                 <span class="meta-value vecthare-matched-keywords">${chunk.matchedQueryKeywords.join(', ')}</span>
+                            </div>` : ''}
+                            ${chunk.vectorRank !== undefined ? `
+                            <div class="vecthare-debug-meta-item">
+                                <span class="meta-label">Vector Rank</span>
+                                <span class="meta-value">#${chunk.vectorRank}</span>
+                            </div>` : ''}
+                            ${chunk.keywordRank !== undefined && chunk.keywordRank !== Infinity ? `
+                            <div class="vecthare-debug-meta-item">
+                                <span class="meta-label">Keyword Rank</span>
+                                <span class="meta-value">#${chunk.keywordRank}</span>
+                            </div>` : ''}
+                            ${chunk.matchedKeywords !== undefined ? `
+                            <div class="vecthare-debug-meta-item">
+                                <span class="meta-label">Keywords Matched</span>
+                                <span class="meta-value">${chunk.matchedKeywords} keyword${chunk.matchedKeywords !== 1 ? 's' : ''}</span>
+                            </div>` : ''}
+                            ${chunk.fusionMethod ? `
+                            <div class="vecthare-debug-meta-item">
+                                <span class="meta-label">Fusion Method</span>
+                                <span class="meta-value">${chunk.fusionMethod.toUpperCase()}</span>
                             </div>` : ''}
                         </div>
                     </div>
@@ -645,10 +684,8 @@ function buildScoreBreakdown(chunk) {
 
     if (isHybridSearch) {
         // Hybrid search breakdown - show vector and text scores
-        const vectorPct = ((chunk.vectorScore || 0) * 100).toFixed(0);
-        const textPct = ((chunk.textScore || 0) * 100).toFixed(0);
-        const finalPct = ((chunk.score || 0) * 100).toFixed(1);
         const fusionMethod = chunk.fusionMethod || 'rrf';
+        const isRRF = fusionMethod === 'rrf';
         const hasTextMatch = (chunk.textScore || 0) > 0.01;
 
         let matchIndicator = '';
@@ -658,16 +695,28 @@ function buildScoreBreakdown(chunk) {
             matchIndicator = '<span class="vecthare-score-good" title="Both semantic and keyword match">✓</span>';
         }
 
+        // RRF final score is raw, but vector/text scores are still percentages (from Qdrant)
+        let vectorDisplay, textDisplay, finalDisplay;
+        if (isRRF) {
+            vectorDisplay = ((chunk.vectorScore || 0) * 100).toFixed(0) + '%';  // Qdrant cosine
+            textDisplay = ((chunk.textScore || 0) * 100).toFixed(0) + '%';     // Keyword match
+            finalDisplay = (chunk.score || 0).toFixed(4);                      // RRF fusion
+        } else {
+            vectorDisplay = ((chunk.vectorScore || 0) * 100).toFixed(0) + '%';
+            textDisplay = ((chunk.textScore || 0) * 100).toFixed(0) + '%';
+            finalDisplay = ((chunk.score || 0) * 100).toFixed(1) + '%';
+        }
+
         return `<div class="vecthare-debug-score-breakdown vecthare-hybrid-breakdown">
             <div class="vecthare-hybrid-scores">
-                <span class="vecthare-score-vector-badge" title="Semantic similarity">🔷 Vector: ${vectorPct}%</span>
-                <span class="vecthare-score-text-badge" title="Keyword/BM25 match">📝 Text: ${textPct}%</span>
+                <span class="vecthare-score-vector-badge" title="Semantic similarity">🔷 Vector: ${vectorDisplay}</span>
+                <span class="vecthare-score-text-badge" title="Keyword/BM25 match">📝 Text: ${textDisplay}</span>
                 ${matchIndicator}
             </div>
             <div class="vecthare-score-math">
                 <span class="vecthare-score-fusion">${fusionMethod.toUpperCase()}</span>
                 <span class="vecthare-score-operator">→</span>
-                <span class="vecthare-score-final">${finalPct}%</span>
+                <span class="vecthare-score-final">${finalDisplay}</span>
             </div>
         </div>`;
     }

@@ -568,7 +568,7 @@ export class MilvusBackend extends VectorBackend {
         const {
             vectorWeight = 0.5,
             textWeight = 0.5,
-            fusionType = 'rrf',
+            fusionMethod = 'rrf',
             rrfK = 60
         } = hybridOptions;
 
@@ -588,7 +588,7 @@ export class MilvusBackend extends VectorBackend {
             hybridOptions: {
                 vectorWeight,
                 textWeight,
-                fusionType,
+                fusionMethod,
                 rrfK
             }
         };
@@ -613,7 +613,7 @@ export class MilvusBackend extends VectorBackend {
                         score: r.score,
                         vectorScore: r.vectorScore,
                         textScore: r.textScore,
-                        fusionMethod: fusionType,
+                        fusionMethod: fusionMethod,
                         hybridSearch: true,
                         ...r.metadata,
                     }))
