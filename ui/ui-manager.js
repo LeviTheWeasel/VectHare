@@ -6,7 +6,7 @@
  * Keeps index.js clean and lean
  *
  * @author Coneja Chibi
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 
@@ -20,6 +20,7 @@ import { openContentVectorizer } from './content-vectorizer.js';
 import { openSearchDebugModal, getLastSearchDebug } from './search-debug.js';
 import { openTextCleaningManager } from './text-cleaning-manager.js';
 import { resetBackendHealth } from '../backends/backend-manager.js';
+import { getHealthIndicatorHtml, getHealthModalHtml, initializeHealthDashboard } from './health-dashboard.js';
 import { getChatCollectionId } from '../core/chat-vectorization.js';
 import { doesChatHaveVectors } from '../core/collection-loader.js';
 import { getModelField } from '../core/providers.js';
@@ -387,6 +388,12 @@ export function renderSettings(containerId, settings, callbacks) {
                                 <small class="vecthare_hint">Limit the number of API requests per time interval</small>
                             </div>
 
+                            <label for="vecthare_insert_batch_size">
+                                <small>Insert Batch Size: <span id="vecthare_insert_batch_size_value">50</span></small>
+                            </label>
+                            <input type="range" id="vecthare_insert_batch_size" class="vecthare-slider" min="10" max="100" step="10" />
+                            <small class="vecthare_hint">Chunks per insert batch (50-100 recommended for faster bulk operations)</small>
+
                             <label for="vecthare_score_threshold">
                                 <small>Similarity Threshold: <span id="vecthare_threshold_value">0.25</span></small>
                             </label>
@@ -463,6 +470,17 @@ export function renderSettings(containerId, settings, callbacks) {
                                     </label>
                                     <small class="vecthare_hint">Use Qdrant/Milvus native hybrid if available (faster)</small>
                                 </div>
+                            </div>
+
+                            <!-- Custom Stopwords -->
+                            <div style="margin-top: 16px; padding: 12px; background: rgba(100,100,100,0.1); border-radius: 8px;">
+                                <label for="vecthare_custom_stopwords">
+                                    <small><b>Custom Stopwords</b></small>
+                                </label>
+                                <textarea id="vecthare_custom_stopwords" class="vecthare-textarea" rows="2"
+                                    placeholder="{{char}}, {{user}}, character, scene, location..."
+                                    style="margin-top: 4px;"></textarea>
+                                <small class="vecthare_hint">Words to exclude from keyword extraction. Supports ST macros: {{char}}, {{user}}, {{charIfNotGroup}}, etc.</small>
                             </div>
 
                             <label for="vecthare_query_depth" style="margin-top: 12px;">
@@ -727,6 +745,7 @@ export function renderSettings(containerId, settings, callbacks) {
                                     <i class="fa-solid fa-broom"></i>
                                     <span>Text Cleaning</span>
                                 </button>
+                                ${getHealthIndicatorHtml()}
                             </div>
 
                             <label class="checkbox_label" for="vecthare_include_production_tests" style="margin-top: 20px;">
@@ -872,6 +891,8 @@ export function renderSettings(containerId, settings, callbacks) {
                 </div>
             </div>
         </div>
+
+        ${getHealthModalHtml()}
     `;
 
     // Sanity debug: confirm the generated HTML contains the lock button marker
@@ -912,6 +933,9 @@ export function renderSettings(containerId, settings, callbacks) {
 
     // Initialize modal
     initializeDiagnosticsModal();
+
+    // Initialize health dashboard
+    initializeHealthDashboard();
 
     console.log('VectHare UI: Settings rendered');
 }
@@ -2097,6 +2121,15 @@ function bindSettingsEvents(settings, callbacks) {
             saveSettingsDebounced();
         });
 
+    // Custom stopwords
+    $('#vecthare_custom_stopwords')
+        .val(settings.custom_stopwords || '')
+        .on('input', function() {
+            settings.custom_stopwords = $(this).val();
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+        });
+
     // Initialize world info settings visibility based on current setting
     $('#vecthare_world_info_settings').toggle(settings.enabled_world_info || false);
 
@@ -2598,6 +2631,18 @@ function bindSettingsEvents(settings, callbacks) {
             Object.assign(extension_settings.vecthare, settings);
             saveSettingsDebounced();
         });
+
+    // VEC-6: Insert Batch Size
+    $('#vecthare_insert_batch_size')
+        .val(settings.insert_batch_size || 50)
+        .on('input', function() {
+            const value = parseInt($(this).val());
+            $('#vecthare_insert_batch_size_value').text(value);
+            settings.insert_batch_size = value;
+            Object.assign(extension_settings.vecthare, settings);
+            saveSettingsDebounced();
+        });
+    $('#vecthare_insert_batch_size_value').text(settings.insert_batch_size || 50);
 
     // Action buttons
     $('#vecthare_vectorize_content').on('click', () => {

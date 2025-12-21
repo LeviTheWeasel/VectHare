@@ -5,7 +5,7 @@
  * Settings validation and configuration checks
  *
  * @author Coneja Chibi
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 

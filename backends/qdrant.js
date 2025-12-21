@@ -690,7 +690,7 @@ export class QdrantBackend extends VectorBackend {
         const {
             vectorWeight = 0.5,
             textWeight = 0.5,
-            fusionType = 'rrf',
+            fusionMethod = 'rrf',
             rrfK = 60
         } = hybridOptions;
 
@@ -710,7 +710,7 @@ export class QdrantBackend extends VectorBackend {
             hybridOptions: {
                 vectorWeight,
                 textWeight,
-                fusionType,
+                fusionMethod,
                 rrfK
             }
         };
@@ -742,10 +742,13 @@ export class QdrantBackend extends VectorBackend {
                         hash: r.hash,
                         text: r.text,
                         score: r.score,
-                        vectorScore: r.vectorScore,
-                        textScore: r.textScore,
-                        fusionMethod: fusionType,
+                        vectorScore: r.vectorScore || r.debug?.vectorScore,
+                        textScore: r.textScore || r.debug?.keywordScore,
+                        fusionMethod: r.debug?.fusionMethod || fusionMethod,
                         hybridSearch: true,
+                        vectorRank: r.debug?.vectorRank,
+                        keywordRank: r.debug?.keywordRank,
+                        matchedKeywords: r.debug?.matchedKeywords,
                         ...r.metadata,
                     }))
                 };

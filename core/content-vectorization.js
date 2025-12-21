@@ -6,7 +6,7 @@
  * Uses the same pipeline infrastructure, just with type-appropriate settings.
  *
  * @author Coneja Chibi
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 
@@ -77,7 +77,11 @@ export async function vectorizeContent({ contentType, source, settings }) {
         // Step 3: Enrich and hash
         progressTracker.updateProgress(3, 'Processing chunks...');
         const collectionId = generateCollectionId(contentType, source, settings);
-        const enrichedChunks = enrichChunks(chunks, contentType, source, settings, preparedContent);
+        
+        // Get full extension settings for keyword extraction (includes custom_stopwords)
+        const vecthareSettings = extension_settings.vecthare;
+        
+        const enrichedChunks = enrichChunks(chunks, contentType, source, settings, preparedContent, vecthareSettings);
         const hashedChunks = enrichedChunks.map(chunk => ({
             ...chunk,
             hash: getStringHash(chunk.text),
@@ -85,7 +89,6 @@ export async function vectorizeContent({ contentType, source, settings }) {
 
         // Step 4: Insert into vector store (streaming: embed + write together)
         progressTracker.updateProgress(4, 'Processing chunks...');
-        const vecthareSettings = extension_settings.vecthare;
 
         // Ensure backend is initialized and healthy before attempting inserts.
         // Some backends (LanceDB/Qdrant) require initialization which may fail
@@ -684,8 +687,9 @@ function generateCollectionId(contentType, source, settings) {
  * @param {object} source - Source info
  * @param {object} settings - Vectorization settings including keyword options
  * @param {object} preparedContent - Prepared content data
+ * @param {object} vecthareSettings - Full VectHare extension settings (includes custom_stopwords)
  */
-function enrichChunks(chunks, contentType, source, settings, preparedContent) {
+function enrichChunks(chunks, contentType, source, settings, preparedContent, vecthareSettings) {
     // Get keyword extraction settings
     const keywordLevel = settings.keywordLevel || 'balanced';
     const keywordBaseWeight = settings.keywordBaseWeight || 1.5;
@@ -703,7 +707,7 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent) {
             entryUid = entry.uid;
 
             // Get explicit trigger keys (these are manually set, so use base weight)
-            const triggerKeys = extractLorebookKeywords(entry);
+            const triggerKeys = extractLorebookKeywords(entry, vecthareSettings);
             keywords = triggerKeys.map(k => ({ text: k, weight: keywordBaseWeight }));
 
             // Also get auto-extracted keywords with frequency-based weights
@@ -711,6 +715,7 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent) {
                 const autoKeywords = extractTextKeywords(entry.content || chunkText, {
                     level: keywordLevel,
                     baseWeight: keywordBaseWeight,
+                    settings: vecthareSettings,
                 });
                 keywords = keywords.concat(autoKeywords);
             }
@@ -720,6 +725,7 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent) {
                 keywords = extractBM25Keywords(chunkText, {
                     level: keywordLevel,
                     baseWeight: keywordBaseWeight,
+                    settings: vecthareSettings,
                 });
             }
         } else {
@@ -728,6 +734,7 @@ function enrichChunks(chunks, contentType, source, settings, preparedContent) {
                 keywords = extractTextKeywords(chunkText, {
                     level: keywordLevel,
                     baseWeight: keywordBaseWeight,
+                    settings: vecthareSettings,
                 });
             }
         }

@@ -29,7 +29,7 @@ import { textgen_types, textgenerationwebui_settings } from '../../../../textgen
 import { oai_settings } from '../../../../openai.js';
 import { isWebLlmSupported } from '../../../shared.js';
 import { getWebLlmProvider } from '../providers/webllm.js';
-import { getBackend } from '../backends/backend-manager.js';
+import { getBackend, invalidateBackendHealth, recordQuery, recordInsert, recordDelete, recordError } from '../backends/backend-manager.js';
 import {
     getProviderConfig,
     getModelField,
@@ -55,6 +55,24 @@ import {
 
 // Get shared WebLLM provider singleton (lazy-initialized)
 const webllmProvider = getWebLlmProvider();
+
+/**
+ * VEC-33: Wrapper for backend operations that invalidates health cache on error
+ * @param {Function} operation - Async function that performs the backend operation
+ * @param {object} settings - Settings object (used to determine backend name)
+ * @returns {Promise<any>} Result of the operation
+ * @throws {Error} Re-throws the original error after invalidating cache
+ */
+async function withHealthInvalidation(operation, settings) {
+    try {
+        return await operation();
+    } catch (error) {
+        // Invalidate health cache for the backend that failed
+        const backendName = settings?.vector_backend || 'standard';
+        invalidateBackendHealth(backendName, error);
+        throw error;
+    }
+}
 
 /**
  * Rate limiter that respects user settings dynamically.
@@ -615,37 +633,45 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
     // Sources that require client-side embedding generation
     const clientSideEmbeddingSources = ['webllm', 'koboldcpp', 'bananabread'];
 
-    // If source requires client-side embeddings, use streaming approach
-    if (clientSideEmbeddingSources.includes(settings.source)) {
-        console.log(`VectHare: Streaming embeddings and writing for ${settings.source}...`);
+    try {
+        // If source requires client-side embeddings, use streaming approach
+        if (clientSideEmbeddingSources.includes(settings.source)) {
+            console.log(`VectHare: Streaming embeddings and writing for ${settings.source}...`);
 
-        // Extract text strings - getAdditionalArgs expects string[], not objects
-        const textStrings = items.map(item => {
-            const text = item.text || item;
-            // Ensure we have valid text (not empty after cleaning)
-            return typeof text === 'string' && text.trim().length > 0 ? text : ' ';
-        });
+            // Extract text strings - getAdditionalArgs expects string[], not objects
+            const textStrings = items.map(item => {
+                const text = item.text || item;
+                // Ensure we have valid text (not empty after cleaning)
+                return typeof text === 'string' && text.trim().length > 0 ? text : ' ';
+            });
 
-        // Use streaming embedding generation with immediate writes
-        await streamEmbeddingsAndWrite(backend, collectionId, items, textStrings, settings, onProgress);
-    } else {
-        // Server-side embeddings - backend handles everything
-        // If rate limiting is enabled, batch execution
-        if (settings.rate_limit_calls > 0) {
-            // Batch size depends on provider - some need smaller batches
-            // Ollama and Transformers work best with batch size of 1 (like Stock ST)
+            // Use streaming embedding generation with immediate writes
+            await streamEmbeddingsAndWrite(backend, collectionId, items, textStrings, settings, onProgress);
+        } else {
+            // Server-side embeddings - backend handles everything
+            // VEC-6: Use configurable batch size for optimized bulk inserts
+            // Some providers need smaller batches - Ollama and Transformers work best with batch size of 1
             const smallBatchProviders = ['transformers', 'ollama'];
-            const BATCH_SIZE = smallBatchProviders.includes(settings.source) ? 1 : 10;
+            const configuredBatchSize = settings.insert_batch_size || 50;
+            const BATCH_SIZE = smallBatchProviders.includes(settings.source) ? 1 : configuredBatchSize;
             const batches = chunkArray(items, BATCH_SIZE);
 
-            console.log(`VectHare: Processing ${items.length} items in ${batches.length} batches with rate limit (Max ${settings.rate_limit_calls} calls / ${settings.rate_limit_interval}s)`);
+            const hasRateLimit = settings.rate_limit_calls > 0;
+            console.log(`VectHare: Processing ${items.length} items in ${batches.length} batch(es) of up to ${BATCH_SIZE}${hasRateLimit ? ` with rate limit (Max ${settings.rate_limit_calls} calls / ${settings.rate_limit_interval}s)` : ''}`);
 
             for (let i = 0; i < batches.length; i++) {
-                await dynamicRateLimiter.execute(async () => {
+                const processBatch = async () => {
                     await AsyncUtils.retry(async () => {
                         await backend.insertVectorItems(collectionId, batches[i], settings);
                     }, RETRY_CONFIG);
-                }, settings);
+                };
+
+                // Apply rate limiting if configured, otherwise execute directly
+                if (hasRateLimit) {
+                    await dynamicRateLimiter.execute(processBatch, settings);
+                } else {
+                    await processBatch();
+                }
 
                 if (onProgress) {
                     const embeddedCount = (i + 1) * BATCH_SIZE;
@@ -653,14 +679,14 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
                     onProgress(actualEmbedded, items.length);
                 }
             }
-        } else {
-            // No rate limit - execute all at once (backend handles it)
-            await backend.insertVectorItems(collectionId, items, settings);
-
-            if (onProgress) {
-                onProgress(items.length, items.length);
-            }
         }
+
+        // VEC-18: Record successful insert operation
+        recordInsert(settings?.vector_backend || 'standard', items.length);
+    } catch (error) {
+        // VEC-18: Record error
+        recordError(settings?.vector_backend || 'standard', error);
+        throw error;
     }
 }
 
@@ -674,23 +700,34 @@ export async function insertVectorItems(collectionId, items, settings, onProgres
  * @param {Function} onProgress - Progress callback
  */
 async function streamEmbeddingsAndWrite(backend, collectionId, items, textStrings, settings, onProgress) {
-    const EMBEDDING_BATCH_SIZE = 10; // Batch size for embedding generation
-    const embeddingsMap = /** @type {Record<string, number[]>} */ ({});
+    // VEC-6: Use configurable batch size for optimized bulk inserts
+    const EMBEDDING_BATCH_SIZE = settings.insert_batch_size || 50;
     let totalProcessed = 0;
+    const totalBatches = Math.ceil(textStrings.length / EMBEDDING_BATCH_SIZE);
+
+    console.log(`VectHare: Streaming ${items.length} items in ${totalBatches} batch(es) of up to ${EMBEDDING_BATCH_SIZE}`);
 
     // Process embeddings in batches
     for (let i = 0; i < textStrings.length; i += EMBEDDING_BATCH_SIZE) {
         const batchEnd = Math.min(i + EMBEDDING_BATCH_SIZE, textStrings.length);
         const batchTextStrings = textStrings.slice(i, batchEnd);
         const batchItems = items.slice(i, batchEnd);
+        const batchNum = Math.floor(i / EMBEDDING_BATCH_SIZE) + 1;
 
-        console.log(`VectHare: Embedding batch ${Math.floor(i / EMBEDDING_BATCH_SIZE) + 1}/${Math.ceil(textStrings.length / EMBEDDING_BATCH_SIZE)} (items ${i + 1}-${batchEnd})`);
+        console.log(`VectHare: Embedding batch ${batchNum}/${totalBatches} (items ${i + 1}-${batchEnd})`);
 
-        // Generate embeddings for this batch
-        const additionalArgs = await getAdditionalArgs(batchTextStrings, settings);
+        // VEC-6: Retry logic per batch instead of per chunk
+        let additionalArgs;
+        try {
+            additionalArgs = await AsyncUtils.retry(async () => {
+                return await getAdditionalArgs(batchTextStrings, settings);
+            }, RETRY_CONFIG);
+        } catch (error) {
+            throw new Error(`VectHare: Failed to generate embeddings for batch ${batchNum} after retries: ${error.message}`);
+        }
 
         if (!additionalArgs.embeddings) {
-            throw new Error(`VectHare: No embeddings returned from ${settings.source} for batch ${i / EMBEDDING_BATCH_SIZE + 1}`);
+            throw new Error(`VectHare: No embeddings returned from ${settings.source} for batch ${batchNum}`);
         }
 
         // Attach embeddings to items and validate
@@ -721,9 +758,15 @@ async function streamEmbeddingsAndWrite(backend, collectionId, items, textString
             throw new Error(`VectHare: Failed to generate embeddings for ${settings.source} - ${missingEmbeddings} items missing in batch`);
         }
 
-        // Write this batch to database immediately
-        console.log(`VectHare: Writing batch ${Math.floor(i / EMBEDDING_BATCH_SIZE) + 1} to database (${itemsToWrite.length} items)`);
-        await backend.insertVectorItems(collectionId, itemsToWrite, settings);
+        // VEC-6: Write batch to database with retry logic
+        console.log(`VectHare: Writing batch ${batchNum} to database (${itemsToWrite.length} items)`);
+        try {
+            await AsyncUtils.retry(async () => {
+                await backend.insertVectorItems(collectionId, itemsToWrite, settings);
+            }, RETRY_CONFIG);
+        } catch (error) {
+            throw new Error(`VectHare: Failed to write batch ${batchNum} to database after retries: ${error.message}`);
+        }
 
         totalProcessed += itemsToWrite.length;
 
@@ -746,7 +789,20 @@ async function streamEmbeddingsAndWrite(backend, collectionId, items, textString
  */
 export async function deleteVectorItems(collectionId, hashes, settings) {
     const backend = await getBackend(settings);
-    return await backend.deleteVectorItems(collectionId, hashes, settings);
+    try {
+        // VEC-33: Wrap with health invalidation
+        const result = await withHealthInvalidation(
+            () => backend.deleteVectorItems(collectionId, hashes, settings),
+            settings
+        );
+        // VEC-18: Record successful delete operation
+        recordDelete(settings?.vector_backend || 'standard', hashes.length);
+        return result;
+    } catch (error) {
+        // VEC-18: Record error
+        recordError(settings?.vector_backend || 'standard', error);
+        throw error;
+    }
 }
 
 /**
@@ -769,25 +825,52 @@ export async function queryCollection(collectionId, searchText, topK, settings) 
     // If source requires client-side embeddings, generate query vector
     if (clientSideEmbeddingSources.includes(settings.source)) {
         const queryItem = [searchText];
-        const additionalArgs = await getAdditionalArgs(queryItem, settings);
-        // additionalArgs.embeddings is a Record<string, number[]> where keys are original text
-        if (additionalArgs.embeddings && additionalArgs.embeddings[searchText]) {
-            queryVector = additionalArgs.embeddings[searchText];
-        } else {
-            throw new Error(`VectHare: Failed to generate query embedding for ${settings.source}`);
+        try {
+            const additionalArgs = await getAdditionalArgs(queryItem, settings);
+            // additionalArgs.embeddings is a Record<string, number[]> where keys are original text
+            if (additionalArgs.embeddings && additionalArgs.embeddings[searchText]) {
+                queryVector = additionalArgs.embeddings[searchText];
+            } else {
+                // VEC-35: Fallback to server-side embedding instead of failing completely
+                console.warn(`[VectHare] Client-side embedding generation returned empty result for ${settings.source}, falling back to server-side embedding`);
+            }
+        } catch (clientEmbedError) {
+            // VEC-35: Fallback to server-side embedding when client-side fails
+            console.warn(`[VectHare] Client-side embedding failed for ${settings.source}: ${clientEmbedError.message}. Falling back to server-side embedding.`);
         }
     }
 
     // Check if hybrid search is enabled
     if (settings.hybrid_search_enabled) {
         console.log('[VectHare] Hybrid search enabled, dispatching to hybrid search module');
-        return hybridSearch(collectionId, searchText, topK, settings, { queryVector });
+        const queryStart = Date.now();
+        try {
+            const result = await hybridSearch(collectionId, searchText, topK, settings, { queryVector });
+            const queryLatency = Date.now() - queryStart;
+            recordQuery(settings?.vector_backend || 'standard', queryLatency);
+            return result;
+        } catch (error) {
+            // VEC-18: Record query error
+            recordError(settings?.vector_backend || 'standard', error);
+            throw error;
+        }
     }
 
     // Standard vector search flow
     // Overfetch to allow keyword-boosted chunks to surface
     const overfetchAmount = getOverfetchAmount(topK);
-    const rawResults = await backend.queryCollection(collectionId, searchText, overfetchAmount, settings, queryVector);
+    // VEC-18: Track query latency for health dashboard
+    const queryStart = Date.now();
+    let rawResults;
+    try {
+        rawResults = await backend.queryCollection(collectionId, searchText, overfetchAmount, settings, queryVector);
+        const queryLatency = Date.now() - queryStart;
+        recordQuery(settings?.vector_backend || 'standard', queryLatency);
+    } catch (error) {
+        // VEC-18: Record query error
+        recordError(settings?.vector_backend || 'standard', error);
+        throw error;
+    }
 
     // Convert to format expected by keyword boost
     const resultsForBoost = rawResults.metadata.map((meta, idx) => ({
@@ -820,6 +903,9 @@ export async function queryCollection(collectionId, searchText, topK, settings) 
 function scoreResults(resultsForBoost, searchText, topK, settings, overfetchAmount = null) {
     let finalResults;
 
+    // VEC-24: Ensure overfetchAmount has a valid fallback to prevent ReferenceError
+    const safeOverfetchAmount = overfetchAmount ?? resultsForBoost.length;
+
     // Determine scoring method from settings
     const scoringMethod = settings.keyword_scoring_method || 'keyword'; // 'keyword', 'bm25', or 'hybrid'
     if (scoringMethod === 'bm25') {
@@ -833,8 +919,8 @@ function scoreResults(resultsForBoost, searchText, topK, settings, overfetchAmou
         finalResults = bm25Results.slice(0, topK);
     } else if (scoringMethod === 'hybrid') {
         // Use both keyword boost and BM25
-        // Use overfetchAmount if provided, otherwise use the full results length for keyword boost
-        const keywordBoostLimit = overfetchAmount || resultsForBoost.length;
+        // VEC-24: Use safe overfetch amount
+        const keywordBoostLimit = safeOverfetchAmount;
         const keywordBoosted = applyKeywordBoosts(resultsForBoost, searchText, keywordBoostLimit);
         const hybridResults = applyBM25Scoring(keywordBoosted, searchText, {
             k1: settings.bm25_k1 || 1.5,
@@ -869,13 +955,19 @@ export async function queryMultipleCollections(collectionIds, searchText, topK, 
 
     // Generate query vector once for all collections (efficiency)
     if (clientSideEmbeddingSources.includes(settings.source)) {
-        // getAdditionalArgs expects string[], not objects
-        const additionalArgs = await getAdditionalArgs([searchText], settings);
-        // additionalArgs.embeddings is a Record<string, number[]> where keys are original text
-        if (additionalArgs.embeddings && additionalArgs.embeddings[searchText]) {
-            queryVector = additionalArgs.embeddings[searchText];
-        } else {
-            throw new Error(`VectHare: Failed to generate query embedding for ${settings.source}`);
+        try {
+            // getAdditionalArgs expects string[], not objects
+            const additionalArgs = await getAdditionalArgs([searchText], settings);
+            // additionalArgs.embeddings is a Record<string, number[]> where keys are original text
+            if (additionalArgs.embeddings && additionalArgs.embeddings[searchText]) {
+                queryVector = additionalArgs.embeddings[searchText];
+            } else {
+                // VEC-35: Fallback to server-side embedding instead of failing completely
+                console.warn(`[VectHare] Client-side embedding generation returned empty result for ${settings.source}, falling back to server-side embedding`);
+            }
+        } catch (clientEmbedError) {
+            // VEC-35: Fallback to server-side embedding when client-side fails
+            console.warn(`[VectHare] Client-side embedding failed for ${settings.source}: ${clientEmbedError.message}. Falling back to server-side embedding.`);
         }
     }
 
@@ -885,9 +977,14 @@ export async function queryMultipleCollections(collectionIds, searchText, topK, 
         const processedResults = {};
         for (const collectionId of collectionIds) {
             try {
+                const queryStart = Date.now();
                 processedResults[collectionId] = await hybridSearch(collectionId, searchText, topK, settings, { queryVector });
+                const queryLatency = Date.now() - queryStart;
+                recordQuery(settings?.vector_backend || 'standard', queryLatency);
             } catch (error) {
                 console.warn(`[VectHare] Hybrid search failed for ${collectionId}:`, error.message);
+                // VEC-18: Record error
+                recordError(settings?.vector_backend || 'standard', error);
                 processedResults[collectionId] = { hashes: [], metadata: [] };
             }
         }
@@ -897,7 +994,18 @@ export async function queryMultipleCollections(collectionIds, searchText, topK, 
     // Standard vector search flow
     // Get raw results from backend (with overfetch for each collection)
     const overfetchAmount = getOverfetchAmount(topK);
-    const rawResults = await backend.queryMultipleCollections(collectionIds, searchText, overfetchAmount, threshold, settings, queryVector);
+    // VEC-18: Track query latency for health dashboard
+    const queryStart = Date.now();
+    let rawResults;
+    try {
+        rawResults = await backend.queryMultipleCollections(collectionIds, searchText, overfetchAmount, threshold, settings, queryVector);
+        const queryLatency = Date.now() - queryStart;
+        recordQuery(settings?.vector_backend || 'standard', queryLatency);
+    } catch (error) {
+        // VEC-18: Record query error
+        recordError(settings?.vector_backend || 'standard', error);
+        throw error;
+    }
 
     // Apply scoring to each collection's results
     const processedResults = {};
@@ -981,6 +1089,8 @@ export async function purgeVectorIndex(collectionId, settings) {
         console.log(`VectHare: Purged vector index for collection ${collectionId}`);
         return true;
     } catch (error) {
+        // VEC-33: Invalidate health cache on operation error
+        invalidateBackendHealth(settings?.vector_backend || 'standard', error);
         console.error('VectHare: Failed to purge', error);
         return false;
     }
@@ -999,6 +1109,8 @@ export async function purgeFileVectorIndex(collectionId, settings) {
         await backend.purgeFileVectorIndex(collectionId, settings);
         console.log(`VectHare: Purged vector index for collection ${collectionId}`);
     } catch (error) {
+        // VEC-33: Invalidate health cache on operation error
+        invalidateBackendHealth(settings?.vector_backend || 'standard', error);
         console.error('VectHare: Failed to purge file', error);
     }
 }
@@ -1015,6 +1127,8 @@ export async function purgeAllVectorIndexes(settings) {
         console.log('VectHare: Purged all vector indexes');
         toastr.success('All vector indexes purged', 'Purge successful');
     } catch (error) {
+        // VEC-33: Invalidate health cache on operation error
+        invalidateBackendHealth(settings?.vector_backend || 'standard', error);
         console.error('VectHare: Failed to purge all', error);
         toastr.error('Failed to purge all vector indexes', 'Purge failed');
     }

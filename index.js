@@ -6,7 +6,7 @@
  * All logic is in separate modules - see project guidelines
  *
  * @author Coneja Chibi
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 
@@ -29,6 +29,7 @@ import { getChatCollectionId } from './core/chat-vectorization.js';
 import { getDefaultDecaySettings } from './core/temporal-decay.js';
 import { migrateOldEnabledKeys } from './core/collection-metadata.js';
 import { clearCollectionRegistry, discoverExistingCollections } from './core/collection-loader.js';
+import AsyncUtils from './utils/async-utils.js';
 
 // VectHare modules - UI
 import { renderSettings, openDiagnosticsModal, loadWebLlmModels, updateWebLlmStatus, refreshAutoSyncCheckbox } from './ui/ui-manager.js';
@@ -64,6 +65,9 @@ const defaultSettings = {
     use_alt_endpoint: false,
     rate_limit_calls: 5,
     rate_limit_interval: 60, // seconds
+
+    // VEC-6: Batch insert optimization
+    insert_batch_size: 50, // Chunks per insert batch (50-100 recommended)
     togetherai_model: 'togethercomputer/m2-bert-80M-32k-retrieval',
     openai_model: 'text-embedding-ada-002',
     electronhub_model: 'text-embedding-3-small',
@@ -135,6 +139,9 @@ const defaultSettings = {
     world_info_threshold: 0.3,          // Score threshold for WI activation
     world_info_top_k: 3,                // Max entries to activate per lorebook
     world_info_query_depth: 3,          // Recent messages to use for query
+
+    // Keyword Extraction
+    custom_stopwords: '',               // Custom stopwords (comma-separated)
 };
 
 // Runtime settings (merged with saved settings)
@@ -269,14 +276,34 @@ jQuery(async () => {
     // Initialize world info integration hooks
     initializeWorldInfoIntegration();
 
-    // Discover existing collections on load (async, non-blocking)
-    discoverExistingCollections(settings).then(collections => {
-        if (collections.length > 0) {
-            console.log(`VectHare: Discovered ${collections.length} existing collections`);
+    // VEC-34: Discover existing collections with retry mechanism
+    // Uses exponential backoff to handle temporary backend unavailability
+    (async () => {
+        try {
+            const collections = await AsyncUtils.retry(
+                () => discoverExistingCollections(settings),
+                {
+                    maxAttempts: 3,
+                    delay: 2000,
+                    maxDelay: 10000,
+                    backoffFactor: 2,
+                    onRetry: (attempt, error) => {
+                        console.warn(`VectHare: Collection discovery attempt ${attempt} failed: ${error.message}. Retrying...`);
+                    }
+                }
+            );
+            if (collections.length > 0) {
+                console.log(`VectHare: Discovered ${collections.length} existing collections`);
+            }
+        } catch (err) {
+            console.error('VectHare: Collection discovery failed after retries:', err.message);
+            toastr.warning(
+                'Could not discover existing collections. Open Database Browser to refresh manually.',
+                'VectHare: Collection Discovery Failed',
+                { timeOut: 10000 }
+            );
         }
-    }).catch(err => {
-        console.warn('VectHare: Collection discovery failed:', err.message);
-    });
+    })();
 
     // Register event handlers
     eventSource.on(event_types.MESSAGE_DELETED, onChatEvent);

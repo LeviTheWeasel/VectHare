@@ -47,7 +47,7 @@ export async function hybridSearch(collectionId, searchText, topK, settings, opt
             return await backend.hybridQuery(collectionId, searchText, topK, settings, {
                 vectorWeight,
                 textWeight,
-                fusionType: fusionMethod,
+                fusionMethod,
                 rrfK
             });
         } catch (error) {
@@ -116,19 +116,22 @@ async function clientSideHybridSearch(backend, collectionId, searchText, topK, s
         return { hashes: [], metadata: [] };
     }
 
-    // 2. Convert to format for BM25 scoring
+    // 2. Convert to format for BM25 scoring (include title and tags for field boosting)
     const resultsWithText = vectorResults.metadata.map((meta, idx) => ({
         hash: vectorResults.hashes[idx],
         text: meta.text || '',
+        title: meta.entryName || meta.title || '',
+        tags: meta.keywords || [],
         score: meta.score || 0,
         metadata: meta
     }));
 
-    // 3. Perform BM25 full-text search over the result set
+    // 3. Perform BM25 full-text search over the result set with field boosting
     console.log(`[HybridSearch] Computing BM25 scores for ${resultsWithText.length} results...`);
     const bm25Results = performBM25Search(resultsWithText, searchText, {
         k1: settings.bm25_k1 || 1.5,
-        b: settings.bm25_b || 0.75
+        b: settings.bm25_b || 0.75,
+        fieldBoosting: true  // Enable title (3x) and tags (2x) boosting
     });
 
     // 4. Fuse results
@@ -389,8 +392,16 @@ function normalizeScores(results, scoreField = 'score') {
  */
 function performBM25Search(results, query, options = {}) {
     if (!results || results.length === 0) return [];
+    if (!query || typeof query !== 'string') {
+        console.warn('[HybridSearch] Invalid query for BM25 search');
+        return results;
+    }
 
     const scorer = createBM25Scorer(results, options);
+    if (!scorer || scorer.totalDocs === 0) {
+        console.warn('[HybridSearch] Failed to create BM25 scorer or no documents indexed');
+        return results;
+    }
 
     // Get BM25 scores for all results
     const scoredResults = results.map((result, idx) => {

@@ -514,21 +514,24 @@ class Trie {
    * @returns {boolean} True if word was deleted
    */
   delete(word) {
-    return this._deleteHelper(this.root, word, 0);
+    // First check if word exists
+    if (!this.search(word)) {
+      return false;
+    }
+    this._deleteHelper(this.root, word, 0);
+    return true;
   }
 
   /**
-   * Helper for deletion
+   * Helper for deletion - returns true if the current node should be deleted
    *
    * @private
    */
   _deleteHelper(node, word, index) {
     if (index === word.length) {
-      if (!node.isEndOfWord) {
-        return false;
-      }
       node.isEndOfWord = false;
-      return Object.keys(node).length === 0;
+      // Return true if this node has no children (can be pruned)
+      return Object.keys(node).filter(k => k !== 'isEndOfWord').length === 0;
     }
 
     const char = word[index];
@@ -540,7 +543,8 @@ class Trie {
 
     if (shouldDeleteChild) {
       delete node[char];
-      return Object.keys(node).length === 0 && !node.isEndOfWord;
+      // Return true if this node has no children and is not end of another word
+      return Object.keys(node).filter(k => k !== 'isEndOfWord').length === 0 && !node.isEndOfWord;
     }
 
     return false;

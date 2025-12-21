@@ -5,7 +5,7 @@
  * Core logic for vectorizing chat messages and retrieving relevant context
  *
  * @author Coneja Chibi
- * @version 2.0.0-alpha
+ * @version 2.2.0-alpha
  * ============================================================================
  */
 
@@ -407,6 +407,7 @@ export async function synchronizeChat(settings, batchSize = 5) {
     try {
         await waitUntilCondition(() => !syncBlocked && !is_send_press, 1000);
     } catch {
+        syncBlocked = false; // VEC-30: Reset flag on timeout
         return { remaining: -1, messagesProcessed: 0, chunksCreated: 0 };
     }
 
