@@ -260,6 +260,8 @@ class QdrantBackend {
             { field: 'characterName', schema: 'keyword' },
             { field: 'chatId', schema: 'keyword' },
             { field: 'keywords', schema: 'keyword' },
+            // TEXT FIELDS (for full-text search)
+            { field: 'text', schema: 'text' },
             // INTEGER FIELDS
             { field: 'hash', schema: 'integer' },
             { field: 'timestamp', schema: 'integer' },
@@ -666,13 +668,10 @@ class QdrantBackend {
             // STRATEGY 2: Keyword Search (Full-Text Matching)
             // ================================================================
             let keywordResults = [];
-            console.log(`[Qdrant] Starting keyword search with ${keywords.length} keywords: ${keywords.join(', ')}`);
-
 
             if (keywords && keywords.length > 0) {
                 console.log(`[Qdrant] Starting keyword search with ${keywords.length} keywords: ${keywords.join(', ')}`);
 
-            if (keywords && keywords.length > 0) {
                 // Build keyword filter using text matching on 'text' and 'keywords' payload fields
                 const keywordConditions = [];
 
@@ -750,6 +749,8 @@ class QdrantBackend {
                         break;
                     }
 
+                } while (offset !== null && offset !== undefined);
+
                 console.log(`[Qdrant] Keyword search complete: ${keywordResults.length} results`);
             } else {
                 console.log(`[Qdrant] No keywords provided, skipping keyword search`);
@@ -760,8 +761,6 @@ class QdrantBackend {
             // ================================================================
             console.log(`[Qdrant] Starting fusion: ${vectorResults.length} vector + ${keywordResults.length} keyword results`);
 
-            // STRATEGY 3: Fusion (Combine Vector + Keyword Results)
-            // ================================================================
             const fusedResults = this._fuseResults(vectorResults, keywordResults, {
                 method: fusionMethod,
                 vectorWeight,
